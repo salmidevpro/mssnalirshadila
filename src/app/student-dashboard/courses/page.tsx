@@ -2,7 +2,7 @@
 
 import { ArrowLeft, BookOpen, Plus, Search } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { createClient } from "@/lib/supabase/client";
 
@@ -28,8 +28,9 @@ export default function StudentCoursesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const isMountedRef = useRef(true);
 
-  const loadCourses = useCallback(async () => {
+  const loadCourses = async () => {
     try {
       setLoading(true);
       setError(null);
@@ -127,13 +128,12 @@ export default function StudentCoursesPage() {
       // We first get the course IDs.
       // =====================================================
 
-      const { data: registrations, error: registrationError } =
-        await supabase
-          .from("course_registrations")
-          .select("id, course_id")
-          .eq("student_id", student.id)
-          .eq("session_id", session.id)
-          .eq("term_id", term.id);
+      const { data: registrations, error: registrationError } = await supabase
+        .from("course_registrations")
+        .select("id, course_id")
+        .eq("student_id", student.id)
+        .eq("session_id", session.id)
+        .eq("term_id", term.id);
 
       if (registrationError) {
         throw new Error(
@@ -148,7 +148,9 @@ export default function StudentCoursesPage() {
       // =====================================================
 
       if (registrationRows.length === 0) {
-        setCourses([]);
+        if (isMountedRef.current) {
+          setCourses([]);
+        }
         return;
       }
 
@@ -165,7 +167,9 @@ export default function StudentCoursesPage() {
       );
 
       if (courseIds.length === 0) {
-        setCourses([]);
+        if (isMountedRef.current) {
+          setCourses([]);
+        }
         return;
       }
 
@@ -191,35 +195,189 @@ export default function StudentCoursesPage() {
       // 9. NORMALIZE COURSES
       // =====================================================
 
-      const normalizedCourses: Course[] = (courseRows ?? []).map(
-        (course) => ({
-          id: course.id,
-          code: course.code,
-          name: course.name,
-        }),
-      );
+      const normalizedCourses: Course[] = (courseRows ?? []).map((course) => ({
+        id: course.id,
+        code: course.code,
+        name: course.name,
+      }));
 
-      setCourses(normalizedCourses);
+      if (isMountedRef.current) {
+        setCourses(normalizedCourses);
+      }
     } catch (err) {
       console.error("Student courses error:", err);
 
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load your courses.",
-      );
+      if (isMountedRef.current) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load your courses.",
+        );
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
-  }, [supabase]);
+  };
 
   // =====================================================
   // LOAD PAGE
   // =====================================================
 
   useEffect(() => {
-    void loadCourses();
-  }, [loadCourses]);
+    isMountedRef.current = true;
+
+    const loadCoursesForPage = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
+
+        if (authError) {
+          throw new Error(authError.message);
+        }
+
+        if (!user) {
+          throw new Error("You are not logged in.");
+        }
+
+        const { data: student, error: studentError } = await supabase
+          .from("students")
+          .select("id")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (studentError) {
+          throw new Error(
+            `Unable to load student record: ${studentError.message}`,
+          );
+        }
+
+        if (!student) {
+          throw new Error(
+            "Your student record could not be found. Please contact the school administration.",
+          );
+        }
+
+        const { data: session, error: sessionError } = await supabase
+          .from("academic_sessions")
+          .select("id, name, is_current")
+          .eq("is_current", true)
+          .maybeSingle();
+
+        if (sessionError) {
+          throw new Error(
+            `Unable to load academic session: ${sessionError.message}`,
+          );
+        }
+
+        if (!session) {
+          throw new Error("No active academic session has been configured.");
+        }
+
+        const { data: term, error: termError } = await supabase
+          .from("academic_terms")
+          .select("id, name, session_id, is_current")
+          .eq("session_id", session.id)
+          .eq("is_current", true)
+          .maybeSingle();
+
+        if (termError) {
+          throw new Error(
+            `Unable to load academic term: ${termError.message}`,
+          );
+        }
+
+        if (!term) {
+          throw new Error("No active academic term has been configured.");
+        }
+
+        const { data: registrations, error: registrationError } = await supabase
+          .from("course_registrations")
+          .select("id, course_id")
+          .eq("student_id", student.id)
+          .eq("session_id", session.id)
+          .eq("term_id", term.id);
+
+        if (registrationError) {
+          throw new Error(
+            `Unable to load course registrations: ${registrationError.message}`,
+          );
+        }
+
+        const registrationRows = (registrations ?? []) as Registration[];
+
+        if (registrationRows.length === 0) {
+          if (isMountedRef.current) {
+            setCourses([]);
+          }
+          return;
+        }
+
+        const courseIds = Array.from(
+          new Set(
+            registrationRows
+              .map((registration) => registration.course_id)
+              .filter(Boolean),
+          ),
+        );
+
+        if (courseIds.length === 0) {
+          if (isMountedRef.current) {
+            setCourses([]);
+          }
+          return;
+        }
+
+        const { data: courseRows, error: coursesError } = await supabase
+          .from("courses")
+          .select("id, code, name")
+          .in("id", courseIds)
+          .order("code", { ascending: true });
+
+        if (coursesError) {
+          throw new Error(
+            `Unable to load courses: ${coursesError.message}`,
+          );
+        }
+
+        const normalizedCourses: Course[] = (courseRows ?? []).map((course) => ({
+          id: course.id,
+          code: course.code,
+          name: course.name,
+        }));
+
+        if (isMountedRef.current) {
+          setCourses(normalizedCourses);
+        }
+      } catch (err) {
+        console.error("Student courses error:", err);
+
+        if (isMountedRef.current) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Unable to load your courses.",
+          );
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadCoursesForPage();
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [supabase]);
 
   // =====================================================
   // SEARCH
