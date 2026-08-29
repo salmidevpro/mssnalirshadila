@@ -7,7 +7,6 @@ import {
   ChevronDown,
   Edit3,
   GraduationCap,
-  Image as ImageIcon,
   Loader2,
   Mail,
   MapPin,
@@ -28,8 +27,7 @@ const SCHOOL_BLUE = "#010066";
 const SCHOOL_BLUE_DARK = "#00004D";
 const SCHOOL_GOLD = "#FFAF2E";
 
-const MAX_PROFILE_IMAGE_SIZE = 500 * 1024;
-const PROFILE_BUCKET = "student-profiles";
+const MAX_FILE_SIZE = 512000; // 500 KB
 
 type Profile = {
   first_name: string;
@@ -54,6 +52,7 @@ type Student = {
   guardian_name: string | null;
   guardian_phone: string | null;
   profile_photo: string | null;
+  updated_at?: string | null;
 };
 
 type ClassRecord = {
@@ -470,6 +469,10 @@ const NIGERIAN_STATES: Record<string, string[]> = {
     "Jaba",
     "Jema'a",
     "Kachia",
+    "Kaduna North",
+    "Kaduna South",
+    "Kagarko",
+    "Kajuru",
     "Kaura",
     "Kauru",
     "Kubau",
@@ -984,55 +987,9 @@ function initials(firstName: string, lastName: string) {
 }
 
 function getFileExtension(file: File) {
-  const extension = file.name.split(".").pop()?.toLowerCase();
-
-  if (extension && /^[a-z0-9]+$/.test(extension)) {
-    return extension;
-  }
-
   if (file.type === "image/png") return "png";
   if (file.type === "image/webp") return "webp";
-  return "jpg";
-}
-
-function isAllowedImage(file: File) {
-  return [
-    "image/jpeg",
-    "image/jpg",
-    "image/png",
-    "image/webp",
-  ].includes(file.type);
-}
-
-function getStoragePathFromPhoto(photo: string | null) {
-  if (!photo) return null;
-
-  /*
-   * Supports both:
-   *
-   * 1. Stored storage path:
-   *    user-id/profile.jpg
-   *
-   * 2. Full public URL:
-   *    https://.../storage/v1/object/public/student-profiles/user-id/profile.jpg
-   */
-  try {
-    if (photo.startsWith("http")) {
-      const marker = `/storage/v1/object/public/${PROFILE_BUCKET}/`;
-
-      const markerIndex = photo.indexOf(marker);
-
-      if (markerIndex !== -1) {
-        return decodeURIComponent(
-          photo.slice(markerIndex + marker.length),
-        );
-      }
-    }
-  } catch {
-    return null;
-  }
-
-  return photo;
+  return "jpeg";
 }
 
 export default function StudentProfilePage() {
@@ -1051,23 +1008,13 @@ export default function StudentProfilePage() {
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const [photoUploading, setPhotoUploading] =
-    useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoRemoving, setPhotoRemoving] = useState(false);
 
-  const [photoRemoving, setPhotoRemoving] =
-    useState(false);
-
-  const [saveMessage, setSaveMessage] =
-    useState<string | null>(null);
-
-  const [saveError, setSaveError] =
-    useState<string | null>(null);
-
-  const [photoMessage, setPhotoMessage] =
-    useState<string | null>(null);
-
-  const [photoError, setPhotoError] =
-    useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(
+    null,
+  );
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const [form, setForm] = useState<FormData>({
     first_name: "",
@@ -1080,6 +1027,10 @@ export default function StudentProfilePage() {
     guardian_name: "",
     guardian_phone: "",
   });
+
+  /* =========================================================
+     LOAD PROFILE
+  ========================================================= */
 
   const loadProfile = useCallback(async () => {
     try {
@@ -1099,14 +1050,12 @@ export default function StudentProfilePage() {
         throw new Error("You are not logged in.");
       }
 
-      const {
-        data: profileData,
-        error: profileError,
-      } = await supabase
-        .from("profiles")
-        .select("first_name, last_name, email")
-        .eq("id", user.id)
-        .maybeSingle();
+      const { data: profileData, error: profileError } =
+        await supabase
+          .from("profiles")
+          .select("first_name, last_name, email")
+          .eq("id", user.id)
+          .maybeSingle();
 
       if (profileError) {
         throw new Error(
@@ -1114,33 +1063,32 @@ export default function StudentProfilePage() {
         );
       }
 
-      const {
-        data: studentData,
-        error: studentError,
-      } = await supabase
-        .from("students")
-        .select(
-          `
-            id,
-            user_id,
-            student_id,
-            class_id,
-            admission_number,
-            admission_date,
-            date_of_birth,
-            status,
-            full_name,
-            phone,
-            address,
-            state,
-            lga,
-            guardian_name,
-            guardian_phone,
-            profile_photo
-          `,
-        )
-        .eq("user_id", user.id)
-        .maybeSingle();
+      const { data: studentData, error: studentError } =
+        await supabase
+          .from("students")
+          .select(
+            `
+              id,
+              user_id,
+              student_id,
+              class_id,
+              admission_number,
+              admission_date,
+              date_of_birth,
+              status,
+              full_name,
+              phone,
+              address,
+              state,
+              lga,
+              guardian_name,
+              guardian_phone,
+              profile_photo,
+              updated_at
+            `,
+          )
+          .eq("user_id", user.id)
+          .maybeSingle();
 
       if (studentError) {
         throw new Error(
@@ -1157,16 +1105,13 @@ export default function StudentProfilePage() {
       let loadedClass: ClassRecord | null = null;
 
       if (studentData.class_id) {
-        const {
-          data: classData,
-          error: classError,
-        } = await supabase
+        const { data: classData } = await supabase
           .from("classes")
           .select("id, name")
           .eq("id", studentData.class_id)
           .maybeSingle();
 
-        if (!classError && classData) {
+        if (classData) {
           loadedClass = classData;
         }
       }
@@ -1209,44 +1154,18 @@ export default function StudentProfilePage() {
   }, [supabase]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadProfile();
+    const timer = window.setTimeout(() => {
+      void loadProfile();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [loadProfile]);
 
-  const openEdit = () => {
-    if (!profile || !student) return;
-
-    setForm({
-      first_name: profile.first_name,
-      last_name: profile.last_name,
-      phone: student.phone ?? "",
-      date_of_birth: student.date_of_birth ?? "",
-      address: student.address ?? "",
-      state: student.state ?? "",
-      lga: student.lga ?? "",
-      guardian_name: student.guardian_name ?? "",
-      guardian_phone: student.guardian_phone ?? "",
-    });
-
-    setSaveMessage(null);
-    setSaveError(null);
-    setPhotoMessage(null);
-    setPhotoError(null);
-
-    setEditOpen(true);
-  };
-
-  const closeEdit = () => {
-    if (saving || photoUploading || photoRemoving) {
-      return;
-    }
-
-    setEditOpen(false);
-    setSaveError(null);
-    setSaveMessage(null);
-    setPhotoError(null);
-    setPhotoMessage(null);
-  };
+  /* =========================================================
+     FORM
+  ========================================================= */
 
   const updateForm = <K extends keyof FormData>(
     field: K,
@@ -1266,302 +1185,38 @@ export default function StudentProfilePage() {
     }));
   };
 
-  /*
-   * =========================================================
-   * PROFILE PHOTO UPLOAD
-   * =========================================================
-   */
+  const openEdit = () => {
+    if (!profile || !student) return;
 
-  const uploadProfilePhoto = async (file: File) => {
-    if (!student) return;
+    setForm({
+      first_name: profile.first_name,
+      last_name: profile.last_name,
+      phone: student.phone ?? "",
+      date_of_birth: student.date_of_birth ?? "",
+      address: student.address ?? "",
+      state: student.state ?? "",
+      lga: student.lga ?? "",
+      guardian_name: student.guardian_name ?? "",
+      guardian_phone: student.guardian_phone ?? "",
+    });
 
-    setPhotoError(null);
-    setPhotoMessage(null);
+    setSaveError(null);
+    setSaveMessage(null);
 
-    if (!isAllowedImage(file)) {
-      setPhotoError(
-        "Please choose a JPG, PNG, or WebP image.",
-      );
-      return;
-    }
-
-    if (file.size > MAX_PROFILE_IMAGE_SIZE) {
-      setPhotoError(
-        "Profile photo must not be larger than 500 KB.",
-      );
-      return;
-    }
-
-    try {
-      setPhotoUploading(true);
-
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError) {
-        throw new Error(authError.message);
-      }
-
-      if (!user) {
-        throw new Error("Your login session has expired.");
-      }
-
-      const extension = getFileExtension(file);
-
-      /*
-       * Keep one predictable photo per student.
-       *
-       * Example:
-       * student-user-id/profile.jpg
-       */
-      const storagePath = `${user.id}/profile.${extension}`;
-
-      /*
-       * Delete previous versions first.
-       *
-       * This also handles the situation where the old file
-       * had a different extension.
-       */
-      const oldPhotoPath = getStoragePathFromPhoto(
-        student.profile_photo,
-      );
-
-      const possibleOldPaths = [
-        oldPhotoPath,
-        `${user.id}/profile.jpg`,
-        `${user.id}/profile.jpeg`,
-        `${user.id}/profile.png`,
-        `${user.id}/profile.webp`,
-      ].filter(
-        (path, index, array): path is string =>
-          Boolean(path) &&
-          array.indexOf(path) === index &&
-          path !== storagePath,
-      );
-
-      if (possibleOldPaths.length > 0) {
-        const {
-          error: removeOldError,
-        } = await supabase.storage
-          .from(PROFILE_BUCKET)
-          .remove(possibleOldPaths);
-
-        /*
-         * Don't fail the whole upload simply because an old
-         * file doesn't exist anymore.
-         */
-        if (removeOldError) {
-          console.warn(
-            "Unable to remove old profile photo:",
-            removeOldError.message,
-          );
-        }
-      }
-
-      /*
-       * Upload with upsert so the same profile path can
-       * safely be replaced.
-       */
-      const {
-        error: uploadError,
-      } = await supabase.storage
-        .from(PROFILE_BUCKET)
-        .upload(storagePath, file, {
-          cacheControl: "3600",
-          upsert: true,
-          contentType: file.type,
-        });
-
-      if (uploadError) {
-        throw new Error(
-          `Unable to upload your profile photo: ${uploadError.message}`,
-        );
-      }
-
-      /*
-       * Since your bucket is public, getPublicUrl gives us
-       * a URL that can be displayed directly by <img>.
-       */
-      const {
-        data: publicUrlData,
-      } = supabase.storage
-        .from(PROFILE_BUCKET)
-        .getPublicUrl(storagePath);
-
-      const publicUrl = publicUrlData.publicUrl;
-
-      if (!publicUrl) {
-        throw new Error(
-          "The photo uploaded, but its public URL could not be generated.",
-        );
-      }
-
-      /*
-       * Store the URL in students.profile_photo.
-       */
-      const {
-        error: databaseError,
-      } = await supabase
-        .from("students")
-        .update({
-          profile_photo: publicUrl,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", student.id)
-        .eq("user_id", user.id);
-
-      if (databaseError) {
-        /*
-         * Roll back uploaded file if database update fails.
-         */
-        await supabase.storage
-          .from(PROFILE_BUCKET)
-          .remove([storagePath]);
-
-        throw new Error(
-          `Photo uploaded but could not be saved to your profile: ${databaseError.message}`,
-        );
-      }
-
-      /*
-       * Add a cache-busting query parameter so the browser
-       * doesn't continue showing the previous cached image.
-       */
-      const displayUrl = `${publicUrl}?v=${Date.now()}`;
-
-      setStudent((current) =>
-        current
-          ? {
-              ...current,
-              profile_photo: displayUrl,
-            }
-          : current,
-      );
-
-      setPhotoMessage(
-        "Profile photo updated successfully.",
-      );
-    } catch (err) {
-      console.error("Profile photo upload error:", err);
-
-      setPhotoError(
-        err instanceof Error
-          ? err.message
-          : "Unable to upload your profile photo.",
-      );
-    } finally {
-      setPhotoUploading(false);
-
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-    }
+    setEditOpen(true);
   };
 
-  const handlePhotoInput = (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = event.target.files?.[0];
+  const closeEdit = () => {
+    if (saving || photoUploading || photoRemoving) return;
 
-    if (!file) return;
-
-    void uploadProfilePhoto(file);
+    setEditOpen(false);
+    setSaveError(null);
+    setSaveMessage(null);
   };
 
-  const removeProfilePhoto = async () => {
-    if (!student) return;
-
-    setPhotoError(null);
-    setPhotoMessage(null);
-
-    if (!student.profile_photo) {
-      return;
-    }
-
-    try {
-      setPhotoRemoving(true);
-
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError) {
-        throw new Error(authError.message);
-      }
-
-      if (!user) {
-        throw new Error("Your login session has expired.");
-      }
-
-      const photoPath = getStoragePathFromPhoto(
-        student.profile_photo,
-      );
-
-      if (photoPath) {
-        const {
-          error: storageError,
-        } = await supabase.storage
-          .from(PROFILE_BUCKET)
-          .remove([photoPath]);
-
-        if (storageError) {
-          console.warn(
-            "Unable to remove photo from storage:",
-            storageError.message,
-          );
-        }
-      }
-
-      const {
-        error: databaseError,
-      } = await supabase
-        .from("students")
-        .update({
-          profile_photo: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", student.id)
-        .eq("user_id", user.id);
-
-      if (databaseError) {
-        throw new Error(
-          `Unable to remove your profile photo: ${databaseError.message}`,
-        );
-      }
-
-      setStudent((current) =>
-        current
-          ? {
-              ...current,
-              profile_photo: null,
-            }
-          : current,
-      );
-
-      setPhotoMessage(
-        "Profile photo removed successfully.",
-      );
-    } catch (err) {
-      console.error("Profile photo removal error:", err);
-
-      setPhotoError(
-        err instanceof Error
-          ? err.message
-          : "Unable to remove your profile photo.",
-      );
-    } finally {
-      setPhotoRemoving(false);
-    }
-  };
-
-  /*
-   * =========================================================
-   * SAVE PROFILE DETAILS
-   * =========================================================
-   */
+  /* =========================================================
+     SAVE TEXT PROFILE
+  ========================================================= */
 
   const saveProfile = async () => {
     if (!student || !profile) return;
@@ -1571,8 +1226,10 @@ export default function StudentProfilePage() {
 
     const firstName = form.first_name.trim();
     const lastName = form.last_name.trim();
+
     const phone = onlyDigits(form.phone);
     const guardianPhone = onlyDigits(form.guardian_phone);
+
     const address = form.address.trim();
     const guardianName = form.guardian_name.trim();
 
@@ -1624,20 +1281,16 @@ export default function StudentProfilePage() {
       }
 
       /*
-       * Update the authenticated user's profile record.
-       *
-       * This is what makes the new first/last name persistent
-       * in the profiles table.
+       * Update account profile.
        */
-      const {
-        error: profileUpdateError,
-      } = await supabase
-        .from("profiles")
-        .update({
-          first_name: firstName,
-          last_name: lastName,
-        })
-        .eq("id", user.id);
+      const { error: profileUpdateError } =
+        await supabase
+          .from("profiles")
+          .update({
+            first_name: firstName,
+            last_name: lastName,
+          })
+          .eq("id", user.id);
 
       if (profileUpdateError) {
         throw new Error(
@@ -1650,23 +1303,22 @@ export default function StudentProfilePage() {
        */
       const fullName = `${firstName} ${lastName}`.trim();
 
-      const {
-        error: studentUpdateError,
-      } = await supabase
-        .from("students")
-        .update({
-          full_name: fullName,
-          phone: phone || null,
-          date_of_birth: form.date_of_birth || null,
-          address: address || null,
-          state: form.state || null,
-          lga: form.lga || null,
-          guardian_name: guardianName || null,
-          guardian_phone: guardianPhone || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", student.id)
-        .eq("user_id", user.id);
+      const { error: studentUpdateError } =
+        await supabase
+          .from("students")
+          .update({
+            full_name: fullName,
+            phone: phone || null,
+            date_of_birth: form.date_of_birth || null,
+            address: address || null,
+            state: form.state || null,
+            lga: form.lga || null,
+            guardian_name: guardianName || null,
+            guardian_phone: guardianPhone || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", student.id)
+          .eq("user_id", user.id);
 
       if (studentUpdateError) {
         throw new Error(
@@ -1674,6 +1326,9 @@ export default function StudentProfilePage() {
         );
       }
 
+      /*
+       * Update local state.
+       */
       setProfile((current) =>
         current
           ? {
@@ -1705,10 +1360,15 @@ export default function StudentProfilePage() {
         "Your profile has been updated successfully.",
       );
 
+      /*
+       * Reload from Supabase to verify the database state.
+       */
+      await loadProfile();
+
       window.setTimeout(() => {
         setEditOpen(false);
         setSaveMessage(null);
-      }, 1200);
+      }, 1000);
     } catch (err) {
       console.error("Profile update error:", err);
 
@@ -1722,6 +1382,295 @@ export default function StudentProfilePage() {
     }
   };
 
+  /* =========================================================
+     PROFILE PHOTO
+  ========================================================= */
+
+  const openPhotoPicker = () => {
+    if (photoUploading || photoRemoving) return;
+
+    fileInputRef.current?.click();
+  };
+
+  const handlePhotoSelected = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+
+    /*
+     * Reset the input so the same file can be selected again.
+     */
+    event.target.value = "";
+
+    if (!file || !student) return;
+
+    setSaveError(null);
+    setSaveMessage(null);
+
+    /*
+     * Validate MIME type.
+     */
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+      setSaveError(
+        "Please choose a JPEG, PNG, or WebP image.",
+      );
+      return;
+    }
+
+    /*
+     * Validate 500 KB limit.
+     */
+    if (file.size > MAX_FILE_SIZE) {
+      setSaveError(
+        `Image is too large. Maximum allowed size is 500 KB. Your image is ${(
+          file.size / 1024
+        ).toFixed(0)} KB.`,
+      );
+      return;
+    }
+
+    /*
+     * IMPORTANT:
+     *
+     * Your Storage RLS policy checks:
+     *
+     * storage.foldername(name)[1] = students.id
+     *
+     * Therefore the upload path MUST be:
+     *
+     * students.id/profile.jpeg
+     *
+     * NOT:
+     *
+     * user.id/profile.jpeg
+     */
+
+    const extension = getFileExtension(file);
+
+    const filePath = `${student.id}/profile.${extension}`;
+
+    const oldPhotoUrl = student.profile_photo;
+
+    try {
+      setPhotoUploading(true);
+
+      /*
+       * Upload/replace the image.
+       *
+       * upsert=true means the same path can be replaced.
+       */
+      const { error: uploadError } =
+        await supabase.storage
+          .from("student-profiles")
+          .upload(filePath, file, {
+            cacheControl: "3600",
+            upsert: true,
+            contentType: file.type,
+          });
+
+      if (uploadError) {
+        throw new Error(
+          `Unable to upload your profile photo: ${uploadError.message}`,
+        );
+      }
+
+      /*
+       * Generate the public URL.
+       *
+       * A cache-busting query is added so the browser immediately
+       * displays the newly uploaded photo instead of an old cached one.
+       */
+      const {
+        data: { publicUrl },
+      } = supabase.storage
+        .from("student-profiles")
+        .getPublicUrl(filePath);
+
+      const photoUrl = `${publicUrl}?v=${Date.now()}`;
+
+      /*
+       * Store the photo URL in students.profile_photo.
+       */
+      const { error: databaseError } =
+        await supabase
+          .from("students")
+          .update({
+            profile_photo: photoUrl,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", student.id)
+          .eq("user_id", student.user_id);
+
+      if (databaseError) {
+        /*
+         * If DB update fails, try removing the uploaded file
+         * so we don't leave an orphaned image.
+         */
+        await supabase.storage
+          .from("student-profiles")
+          .remove([filePath]);
+
+        throw new Error(
+          `Photo uploaded but could not be saved to your profile: ${databaseError.message}`,
+        );
+      }
+
+      /*
+       * Delete the previous image if it was stored under
+       * student-profiles/<student.id>/...
+       *
+       * We do this AFTER the new image has been safely saved.
+       */
+      if (oldPhotoUrl) {
+        try {
+          const oldPath = extractStoragePath(oldPhotoUrl);
+
+          if (
+            oldPath &&
+            oldPath !== filePath &&
+            oldPath.startsWith(`${student.id}/`)
+          ) {
+            await supabase.storage
+              .from("student-profiles")
+              .remove([oldPath]);
+          }
+        } catch (cleanupError) {
+          console.warn(
+            "Old profile photo cleanup failed:",
+            cleanupError,
+          );
+        }
+      }
+
+      /*
+       * Update UI immediately.
+       */
+      setStudent((current) =>
+        current
+          ? {
+              ...current,
+              profile_photo: photoUrl,
+              updated_at: new Date().toISOString(),
+            }
+          : current,
+      );
+
+      setSaveMessage(
+        "Your profile photo has been updated successfully.",
+      );
+
+      /*
+       * Re-read database to ensure everything is synchronized.
+       */
+      await loadProfile();
+    } catch (err) {
+      console.error("Profile photo upload error:", err);
+
+      setSaveError(
+        err instanceof Error
+          ? err.message
+          : "Unable to upload your profile photo.",
+      );
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
+  /* =========================================================
+     REMOVE PROFILE PHOTO
+  ========================================================= */
+
+  const removeProfilePhoto = async () => {
+    if (!student?.profile_photo) return;
+
+    const confirmed = window.confirm(
+      "Are you sure you want to remove your profile photo?",
+    );
+
+    if (!confirmed) return;
+
+    setSaveError(null);
+    setSaveMessage(null);
+
+    try {
+      setPhotoRemoving(true);
+
+      const oldPath = extractStoragePath(
+        student.profile_photo,
+      );
+
+      /*
+       * Remove actual Storage file first.
+       */
+      if (
+        oldPath &&
+        oldPath.startsWith(`${student.id}/`)
+      ) {
+        const { error: storageError } =
+          await supabase.storage
+            .from("student-profiles")
+            .remove([oldPath]);
+
+        if (storageError) {
+          throw new Error(
+            `Unable to remove your profile photo: ${storageError.message}`,
+          );
+        }
+      }
+
+      /*
+       * Clear database URL.
+       */
+      const { error: databaseError } =
+        await supabase
+          .from("students")
+          .update({
+            profile_photo: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", student.id)
+          .eq("user_id", student.user_id);
+
+      if (databaseError) {
+        throw new Error(
+          `Photo file was removed but the profile could not be updated: ${databaseError.message}`,
+        );
+      }
+
+      setStudent((current) =>
+        current
+          ? {
+              ...current,
+              profile_photo: null,
+              updated_at: new Date().toISOString(),
+            }
+          : current,
+      );
+
+      setSaveMessage(
+        "Your profile photo has been removed.",
+      );
+
+      await loadProfile();
+    } catch (err) {
+      console.error("Profile photo removal error:", err);
+
+      setSaveError(
+        err instanceof Error
+          ? err.message
+          : "Unable to remove your profile photo.",
+      );
+    } finally {
+      setPhotoRemoving(false);
+    }
+  };
+
   const availableLgas = form.state
     ? NIGERIAN_STATES[form.state] ?? []
     : [];
@@ -1730,11 +1679,9 @@ export default function StudentProfilePage() {
     ? `${profile.first_name} ${profile.last_name}`.trim()
     : "Student";
 
-  /*
-   * =========================================================
-   * LOADING
-   * =========================================================
-   */
+  /* =========================================================
+     LOADING
+  ========================================================= */
 
   if (loading) {
     return (
@@ -1757,11 +1704,9 @@ export default function StudentProfilePage() {
     );
   }
 
-  /*
-   * =========================================================
-   * ERROR
-   * =========================================================
-   */
+  /* =========================================================
+     ERROR
+  ========================================================= */
 
   if (error || !profile || !student) {
     return (
@@ -1799,11 +1744,9 @@ export default function StudentProfilePage() {
     );
   }
 
-  /*
-   * =========================================================
-   * PAGE
-   * =========================================================
-   */
+  /* =========================================================
+     PAGE
+  ========================================================= */
 
   return (
     <div className="min-h-full bg-slate-50">
@@ -1867,28 +1810,12 @@ export default function StudentProfilePage() {
               />
 
               <div className="relative z-10 flex flex-col items-center text-center">
-                {student.profile_photo ? (
-                  <Image
-                    src={student.profile_photo}
-                    alt={displayName}
-                    width={112}
-                    height={112}
-                    className="h-28 w-28 rounded-3xl border-4 border-white/20 object-cover shadow-xl"
-                  />
-                ) : (
-                  <div
-                    className="flex h-28 w-28 items-center justify-center rounded-3xl border-4 border-white/15 text-3xl font-black shadow-xl"
-                    style={{
-                      backgroundColor: `${SCHOOL_GOLD}20`,
-                      color: SCHOOL_GOLD,
-                    }}
-                  >
-                    {initials(
-                      profile.first_name,
-                      profile.last_name,
-                    )}
-                  </div>
-                )}
+                <ProfileAvatar
+                  student={student}
+                  profile={profile}
+                  displayName={displayName}
+                  size="large"
+                />
 
                 <h2 className="mt-5 text-xl font-black text-white">
                   {displayName}
@@ -2074,12 +2001,12 @@ export default function StudentProfilePage() {
       </main>
 
       {/* =====================================================
-          EDIT PROFILE MODAL
+          EDIT MODAL
       ====================================================== */}
 
       {editOpen && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-[#00004D]/45 p-3 backdrop-blur-sm sm:p-5"
+          className="fixed inset-0 z-100 flex items-center justify-center bg-[#00004D]/45 p-3 backdrop-blur-sm sm:p-5"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
               closeEdit();
@@ -2127,171 +2054,6 @@ export default function StudentProfilePage() {
             {/* BODY */}
 
             <div className="overflow-y-auto px-5 py-6 sm:px-7">
-              {/* PHOTO */}
-
-              <div className="mb-7">
-                <SectionLabel title="Profile Photo" />
-
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-                  <div className="flex flex-col items-center gap-5 sm:flex-row">
-                    <div className="relative shrink-0">
-                      {student.profile_photo ? (
-                        <Image
-                          src={student.profile_photo}
-                          alt={displayName}
-                          width={112}
-                          height={112}
-                          unoptimized
-                          className="h-28 w-28 rounded-3xl border-4 border-white object-cover shadow-md"
-                        />
-                      ) : (
-                        <div
-                          className="flex h-28 w-28 items-center justify-center rounded-3xl border-4 border-white text-3xl font-black shadow-md"
-                          style={{
-                            backgroundColor: `${SCHOOL_BLUE}10`,
-                            color: SCHOOL_BLUE,
-                          }}
-                        >
-                          {initials(
-                            profile.first_name,
-                            profile.last_name,
-                          )}
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        disabled={
-                          photoUploading ||
-                          photoRemoving
-                        }
-                        onClick={() =>
-                          fileInputRef.current?.click()
-                        }
-                        className="absolute -bottom-2 -right-2 flex h-11 w-11 items-center justify-center rounded-full border-4 border-slate-50 text-white shadow-lg transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-60"
-                        style={{
-                          backgroundColor: SCHOOL_BLUE,
-                        }}
-                        title="Change profile photo"
-                      >
-                        {photoUploading ? (
-                          <Loader2
-                            size={17}
-                            className="animate-spin"
-                          />
-                        ) : (
-                          <Camera size={17} />
-                        )}
-                      </button>
-
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        capture="user"
-                        className="hidden"
-                        onChange={handlePhotoInput}
-                      />
-                    </div>
-
-                    <div className="min-w-0 flex-1 text-center sm:text-left">
-                      <p
-                        className="text-sm font-black"
-                        style={{
-                          color: SCHOOL_BLUE_DARK,
-                        }}
-                      >
-                        Profile picture
-                      </p>
-
-                      <p className="mt-1 text-xs leading-5 text-slate-400">
-                        Upload a clear photo of yourself.
-                        JPG, PNG or WebP only.
-                      </p>
-
-                      <p className="mt-1 text-[10px] font-bold text-slate-400">
-                        Maximum file size: 500 KB
-                      </p>
-
-                      <div className="mt-4 flex flex-wrap justify-center gap-2 sm:justify-start">
-                        <button
-                          type="button"
-                          disabled={
-                            photoUploading ||
-                            photoRemoving
-                          }
-                          onClick={() =>
-                            fileInputRef.current?.click()
-                          }
-                          className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-xs font-bold text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
-                          style={{
-                            backgroundColor: SCHOOL_BLUE,
-                          }}
-                        >
-                          <ImageIcon size={14} />
-                          {student.profile_photo
-                            ? "Change Photo"
-                            : "Upload Photo"}
-                        </button>
-
-                        {student.profile_photo && (
-                          <button
-                            type="button"
-                            disabled={
-                              photoUploading ||
-                              photoRemoving
-                            }
-                            onClick={() =>
-                              void removeProfilePhoto()
-                            }
-                            className="inline-flex items-center gap-2 rounded-full border border-red-100 bg-white px-4 py-2.5 text-xs font-bold text-red-500 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {photoRemoving ? (
-                              <Loader2
-                                size={14}
-                                className="animate-spin"
-                              />
-                            ) : (
-                              <Trash2 size={14} />
-                            )}
-
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {photoError && (
-                    <div className="mt-4 flex items-start gap-2 rounded-2xl border border-red-100 bg-red-50 p-3">
-                      <AlertCircle
-                        size={16}
-                        className="mt-0.5 shrink-0 text-red-500"
-                      />
-
-                      <p className="text-[11px] font-medium leading-5 text-red-600">
-                        {photoError}
-                      </p>
-                    </div>
-                  )}
-
-                  {photoMessage && (
-                    <div className="mt-4 flex items-start gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
-                      <Check
-                        size={16}
-                        className="mt-0.5 shrink-0 text-emerald-600"
-                      />
-
-                      <p className="text-[11px] font-bold leading-5 text-emerald-700">
-                        {photoMessage}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* SAVE ERRORS */}
-
               {saveError && (
                 <div className="mb-5 flex items-start gap-3 rounded-2xl border border-red-100 bg-red-50 p-4">
                   <AlertCircle
@@ -2318,9 +2080,129 @@ export default function StudentProfilePage() {
                 </div>
               )}
 
-              {/* BASIC INFORMATION */}
+              {/* =================================================
+                  PROFILE PHOTO
+              ================================================== */}
 
               <div>
+                <SectionLabel title="Profile Photo" />
+
+                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                  <div className="flex flex-col items-center gap-5 sm:flex-row">
+                    <div className="relative shrink-0">
+                      <ProfileAvatar
+                        student={student}
+                        profile={profile}
+                        displayName={displayName}
+                        size="medium"
+                      />
+
+                      {photoUploading && (
+                        <div className="absolute inset-0 flex items-center justify-center rounded-3xl bg-black/45">
+                          <Loader2
+                            size={25}
+                            className="animate-spin text-white"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1 text-center sm:text-left">
+                      <h3
+                        className="text-sm font-black"
+                        style={{
+                          color: SCHOOL_BLUE_DARK,
+                        }}
+                      >
+                        Your profile picture
+                      </h3>
+
+                      <p className="mt-1 text-xs leading-5 text-slate-400">
+                        Upload a clear photo of yourself. Maximum
+                        file size is 500 KB.
+                      </p>
+
+                      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                        <button
+                          type="button"
+                          onClick={openPhotoPicker}
+                          disabled={
+                            photoUploading ||
+                            photoRemoving
+                          }
+                          className="inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-xs font-bold text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+                          style={{
+                            backgroundColor: SCHOOL_BLUE,
+                          }}
+                        >
+                          {photoUploading ? (
+                            <>
+                              <Loader2
+                                size={15}
+                                className="animate-spin"
+                              />
+                              Uploading...
+                            </>
+                          ) : (
+                            <>
+                              <Camera size={15} />
+                              {student.profile_photo
+                                ? "Change Photo"
+                                : "Upload Photo"}
+                            </>
+                          )}
+                        </button>
+
+                        {student.profile_photo && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void removeProfilePhoto()
+                            }
+                            disabled={
+                              photoUploading ||
+                              photoRemoving
+                            }
+                            className="inline-flex items-center justify-center gap-2 rounded-full border border-red-100 bg-white px-4 py-2.5 text-xs font-bold text-red-500 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {photoRemoving ? (
+                              <>
+                                <Loader2
+                                  size={15}
+                                  className="animate-spin"
+                                />
+                                Removing...
+                              </>
+                            ) : (
+                              <>
+                                <Trash2 size={15} />
+                                Remove
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+
+                      <p className="mt-3 text-[10px] text-slate-400">
+                        Accepted: JPEG, PNG or WebP • Maximum
+                        500 KB
+                      </p>
+                    </div>
+                  </div>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={handlePhotoSelected}
+                  />
+                </div>
+              </div>
+
+              {/* BASIC INFORMATION */}
+
+              <div className="mt-7">
                 <SectionLabel title="Basic Information" />
 
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -2404,7 +2286,7 @@ export default function StudentProfilePage() {
                   />
 
                   <p className="mt-1.5 text-[10px] text-slate-400">
-                    Your address can contain street numbers,
+                    Your address may contain numbers, street
                     names, road names and other normal address
                     information.
                   </p>
@@ -2447,10 +2329,7 @@ export default function StudentProfilePage() {
                     label="Guardian Name"
                     value={form.guardian_name}
                     onChange={(value) =>
-                      updateForm(
-                        "guardian_name",
-                        value,
-                      )
+                      updateForm("guardian_name", value)
                     }
                     placeholder="Enter guardian name"
                   />
@@ -2469,7 +2348,7 @@ export default function StudentProfilePage() {
                 </div>
               </div>
 
-              {/* SCHOOL DATA */}
+              {/* SCHOOL RECORDS */}
 
               <div className="mt-7 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex items-start gap-3">
@@ -2482,9 +2361,7 @@ export default function StudentProfilePage() {
                   <div>
                     <p
                       className="text-xs font-black"
-                      style={{
-                        color: SCHOOL_BLUE_DARK,
-                      }}
+                      style={{ color: SCHOOL_BLUE_DARK }}
                     >
                       School records
                     </p>
@@ -2524,9 +2401,7 @@ export default function StudentProfilePage() {
                   photoRemoving
                 }
                 className="inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-70"
-                style={{
-                  backgroundColor: SCHOOL_BLUE,
-                }}
+                style={{ backgroundColor: SCHOOL_BLUE }}
               >
                 {saving ? (
                   <>
@@ -2552,7 +2427,81 @@ export default function StudentProfilePage() {
 }
 
 /* =========================================================
-   COMPONENTS
+   STORAGE PATH HELPER
+========================================================= */
+
+function extractStoragePath(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+
+    const marker =
+      "/storage/v1/object/public/student-profiles/";
+
+    const index = parsed.pathname.indexOf(marker);
+
+    if (index === -1) return null;
+
+    return decodeURIComponent(
+      parsed.pathname.slice(index + marker.length),
+    );
+  } catch {
+    return null;
+  }
+}
+
+/* =========================================================
+   PROFILE AVATAR
+========================================================= */
+
+function ProfileAvatar({
+  student,
+  profile,
+  displayName,
+  size,
+}: {
+  student: Student;
+  profile: Profile;
+  displayName: string;
+  size: "large" | "medium";
+}) {
+  const dimensions =
+    size === "large"
+      ? "h-28 w-28 text-3xl rounded-3xl"
+      : "h-24 w-24 text-2xl rounded-3xl";
+
+  if (student.profile_photo) {
+    const imageSize = size === "large" ? 112 : 96;
+
+    return (
+      <Image
+        src={student.profile_photo}
+        alt={displayName}
+        width={imageSize}
+        height={imageSize}
+        unoptimized
+        className={`${dimensions} border-4 border-white/20 object-cover shadow-xl`}
+      />
+    );
+  }
+
+  return (
+    <div
+      className={`flex ${dimensions} items-center justify-center border-4 border-white/15 font-black shadow-xl`}
+      style={{
+        backgroundColor: `${SCHOOL_GOLD}20`,
+        color: SCHOOL_GOLD,
+      }}
+    >
+      {initials(
+        profile.first_name,
+        profile.last_name,
+      )}
+    </div>
+  );
+}
+
+/* =========================================================
+   MINI ROW
 ========================================================= */
 
 function ProfileMiniRow({
@@ -2588,6 +2537,10 @@ function ProfileMiniRow({
     </div>
   );
 }
+
+/* =========================================================
+   INFO SECTION
+========================================================= */
 
 function InfoSection({
   icon,
@@ -2626,6 +2579,10 @@ function InfoSection({
   );
 }
 
+/* =========================================================
+   DETAIL
+========================================================= */
+
 function DetailItem({
   label,
   value,
@@ -2648,6 +2605,10 @@ function DetailItem({
   );
 }
 
+/* =========================================================
+   SECTION LABEL
+========================================================= */
+
 function SectionLabel({ title }: { title: string }) {
   return (
     <div className="mb-4 flex items-center gap-3">
@@ -2662,6 +2623,10 @@ function SectionLabel({ title }: { title: string }) {
     </div>
   );
 }
+
+/* =========================================================
+   INPUT
+========================================================= */
 
 function InputField({
   label,
@@ -2700,6 +2665,10 @@ function InputField({
     </div>
   );
 }
+
+/* =========================================================
+   PHONE
+========================================================= */
 
 function PhoneField({
   label,
@@ -2745,6 +2714,10 @@ function PhoneField({
   );
 }
 
+/* =========================================================
+   READ ONLY
+========================================================= */
+
 function ReadOnlyField({
   label,
   value,
@@ -2763,7 +2736,9 @@ function ReadOnlyField({
       <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm text-slate-500">
         {icon}
 
-        <span className="truncate">{value}</span>
+        <span className="truncate">
+          {value}
+        </span>
       </div>
 
       <p className="mt-1.5 text-[10px] text-slate-400">
@@ -2772,6 +2747,10 @@ function ReadOnlyField({
     </div>
   );
 }
+
+/* =========================================================
+   SELECT
+========================================================= */
 
 function SelectField({
   label,
@@ -2805,7 +2784,9 @@ function SelectField({
           }
           className="w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-10 text-sm text-slate-700 outline-none transition focus:border-[#010066]/30 focus:bg-white focus:ring-4 focus:ring-[#010066]/5 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <option value="">{placeholder}</option>
+          <option value="">
+            {placeholder}
+          </option>
 
           {options.map((option) => (
             <option key={option} value={option}>
