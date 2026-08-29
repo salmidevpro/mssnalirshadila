@@ -86,6 +86,7 @@ export default function Navbar() {
         ====================================================== */}
 
         <div className="flex min-h-19 items-center justify-between px-3 sm:px-5 lg:min-h-22 lg:px-6">
+
           {/* =================================================
               SCHOOL BRANDING
           ================================================== */}
@@ -118,7 +119,7 @@ export default function Navbar() {
               }}
             />
 
-            {/* FORMER AL-IRSHAD LOGO */}
+            {/* AL-IRSHAD LOGO */}
 
             <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-white ring-1 ring-slate-200 transition-all duration-300 group-hover:scale-105 group-hover:ring-[#FFAF2E]/50 sm:h-12 sm:w-12 lg:h-14 lg:w-14">
               <Image
@@ -182,50 +183,51 @@ export default function Navbar() {
           ================================================== */}
 
           <div className="hidden items-center gap-0.5 xl:flex">
-            {siteConfig.navigation
-              .filter((item) => item.label !== "Portal")
-              .map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
+
+            {/* MAIN NAVIGATION */}
+
+            {siteConfig.navigation.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="
+                  group
+                  relative
+                  rounded-full
+                  px-3.5
+                  py-3
+                  text-[12px]
+                  font-semibold
+                  text-slate-700
+                  transition-colors
+                  duration-300
+                  hover:text-[#010066]
+                "
+              >
+                <span className="relative z-10">
+                  {item.label}
+                </span>
+
+                {/* GOLD HOVER LINE */}
+
+                <span
                   className="
-                    group
-                    relative
+                    absolute
+                    bottom-1.5
+                    left-3.5
+                    right-3.5
+                    h-0.5
+                    origin-left
+                    scale-x-0
                     rounded-full
-                    px-3.5
-                    py-3
-                    text-[12px]
-                    font-semibold
-                    text-slate-700
-                    transition-colors
+                    bg-[#FFAF2E]
+                    transition-transform
                     duration-300
-                    hover:text-[#010066]
+                    group-hover:scale-x-100
                   "
-                >
-                  <span className="relative z-10">
-                    {item.label}
-                  </span>
-
-                  {/* GOLD HOVER LINE */}
-
-                  <span
-                    className="
-                      absolute
-                      bottom-1.5
-                      left-3.5
-                      right-3.5
-                      h-0.5
-                      origin-left
-                      scale-x-0
-                      rounded-full
-                      bg-[#FFAF2E]
-                      transition-transform
-                      duration-300
-                      group-hover:scale-x-100
-                    "
-                  />
-                </Link>
-              ))}
+                />
+              </Link>
+            ))}
 
             {/* =================================================
                 PORTAL DROPDOWN
@@ -411,7 +413,10 @@ export default function Navbar() {
               xl:hidden
             "
           >
-            <AnimatePresence mode="wait" initial={false}>
+            <AnimatePresence
+              mode="wait"
+              initial={false}
+            >
               {mobileOpen ? (
                 <motion.span
                   key="close"
@@ -485,6 +490,7 @@ export default function Navbar() {
               className="overflow-hidden border-t border-slate-100 xl:hidden"
             >
               <div className="max-h-[75vh] overflow-y-auto px-4 pb-5 pt-2">
+
                 {/* MOBILE BRAND MOTTO */}
 
                 <div className="mb-2 rounded-xl bg-[#010066]/3 px-3 py-3">
@@ -504,11 +510,8 @@ export default function Navbar() {
 
                 {/* NAV ITEMS */}
 
-                {siteConfig.navigation
-                  .filter(
-                    (item) => item.label !== "Portal"
-                  )
-                  .map((item, index) => (
+                {siteConfig.navigation.map(
+                  (item, index) => (
                     <motion.div
                       key={item.href}
                       initial={{
@@ -567,7 +570,8 @@ export default function Navbar() {
                         </span>
                       </Link>
                     </motion.div>
-                  ))}
+                  )
+                )}
 
                 {/* =================================================
                     MOBILE PORTAL
