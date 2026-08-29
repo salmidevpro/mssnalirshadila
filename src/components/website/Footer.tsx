@@ -48,11 +48,11 @@ const quickLinks = [
 const portalLinks = [
   {
     label: "Student Portal",
-    href: "/student-portal",
+    href: "/student-login",
   },
   {
     label: "Staff Portal",
-    href: "/staff-portal",
+    href: "/staff-login",
   },
 ];
 
@@ -177,7 +177,7 @@ export default function Footer() {
 
             <div className="mt-7 space-y-3">
               <a
-                href="tel:+2340000000000"
+                href="tel:+2348037211673"
                 className="group flex items-center gap-3 text-sm text-white/60 transition-colors duration-300 hover:text-white"
               >
                 <span
@@ -190,7 +190,7 @@ export default function Footer() {
                   <Phone size={15} />
                 </span>
 
-                <span>Contact the School</span>
+                <span>Call Us +234 803 721 1673</span>
               </a>
 
               <a
@@ -207,7 +207,7 @@ export default function Footer() {
                   <Mail size={15} />
                 </span>
 
-                <span>School Email</span>
+                <span>mssnalirshad@gmail.com</span>
               </a>
 
               <div className="flex items-center gap-3 text-sm text-white/60">
@@ -221,7 +221,7 @@ export default function Footer() {
                   <MapPin size={15} />
                 </span>
 
-                <span>Ila Orangun, Osun State, Nigeria</span>
+                <span>Ita-Baba Area, Ajaba Road, Ila-orangun, Osun State.</span>
               </div>
             </div>
           </motion.div>

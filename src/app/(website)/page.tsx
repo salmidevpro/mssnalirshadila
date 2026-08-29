@@ -978,7 +978,7 @@ export default function HomePage() {
               initial={{ opacity: 0, x: -25 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
-              className="relative overflow-hidden rounded-[2rem] bg-[#010066] p-8 sm:p-10"
+              className="relative overflow-hidden rounded-4xl bg-[#010066] p-8 sm:p-10"
             >
               <Sparkles
                 className="absolute right-8 top-8 opacity-10"
@@ -990,16 +990,17 @@ export default function HomePage() {
                 Our Vision
               </p>
 
-              <h3 className="mt-4 text-2xl font-black text-white">
-                Shaping a better future.
-              </h3>
+              <h5 className="mt-4 text-2xl font-black text-white">
+                To become a leading islamic school in the Nation (In Shaa Allah) which shall uphold; 
+                the Qur&#39;an and Sunnah of the holy Prophet Muhammad in accordance with the understanding of
+                the Salaf.
+              </h5>
 
-              <p className="mt-5 text-sm leading-7 text-white/65">
-                To raise a generation of intellectually capable, spiritually
-                grounded and socially responsible individuals who will
-                positively contribute to the development of the Ummah and the
-                wider world.
-              </p>
+              {/* <p className="mt-5 text-sm leading-7 text-white/65">
+                To become a leading islamic school in the Nation (In Shaa Allah) which shall uphold; 
+                the Qur&#39;an and Sunnah of the holy Prophet Muhammad in accordance with the understanding of
+                the Salaf.
+              </p> */}
             </motion.div>
 
             <motion.div
@@ -1022,19 +1023,16 @@ export default function HomePage() {
                 Our Mission
               </p>
 
-              <h3
+              <h5
                 className="mt-4 text-2xl font-black"
                 style={{ color: SCHOOL_BLUE_DARK }}
               >
-                Developing the whole person.
-              </h3>
+                 To provide a balanced education at affordable costs without compromising standard.
+              </h5>
 
-              <p className="mt-5 text-sm leading-7 text-slate-500">
-                To provide an excellent and holistic educational experience
-                that nurtures knowledgeable, responsible and morally upright
-                individuals through quality learning grounded in Islamic
-                values.
-              </p>
+              {/* <p className="mt-5 text-sm leading-7 text-slate-500">
+               To provide a balanced education at affordable costs without compromising standard
+              </p> */}
             </motion.div>
           </div>
         </div>
@@ -1066,7 +1064,7 @@ export default function HomePage() {
               </p>
 
               <Link
-                href="/student-portal"
+                href="/student-login"
                 className="group mt-7 inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-bold text-[#010066] transition-all hover:-translate-y-1 hover:shadow-xl"
               >
                 Enter Student Portal
@@ -1105,7 +1103,7 @@ export default function HomePage() {
               </p>
 
               <Link
-                href="/staff-portal"
+                href="/staff-login"
                 className="group mt-7 inline-flex items-center gap-2 rounded-full px-6 py-3 text-sm font-bold text-white transition-all hover:-translate-y-1 hover:shadow-xl"
                 style={{ backgroundColor: SCHOOL_BLUE }}
               >

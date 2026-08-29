@@ -374,7 +374,7 @@ export default function StudentSettingsPage() {
        * is completely left after logout.
        */
 
-      window.location.replace("/login");
+      window.location.replace("/student-login");
     } catch (error) {
       console.error(
         "Sign out error:",
