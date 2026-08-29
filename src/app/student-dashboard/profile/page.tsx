@@ -2,28 +2,34 @@
 
 import {
   AlertCircle,
-  CalendarDays,
+  Camera,
   Check,
   ChevronDown,
   Edit3,
   GraduationCap,
+  Image as ImageIcon,
   Loader2,
   Mail,
   MapPin,
   Phone,
   Save,
   ShieldCheck,
+  Trash2,
   User,
   Users,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { createClient } from "@/lib/supabase/client";
 
 const SCHOOL_BLUE = "#010066";
 const SCHOOL_BLUE_DARK = "#00004D";
 const SCHOOL_GOLD = "#FFAF2E";
+
+const MAX_PROFILE_IMAGE_SIZE = 500 * 1024;
+const PROFILE_BUCKET = "student-profiles";
 
 type Profile = {
   first_name: string;
@@ -464,10 +470,6 @@ const NIGERIAN_STATES: Record<string, string[]> = {
     "Jaba",
     "Jema'a",
     "Kachia",
-    "Kaduna North",
-    "Kaduna South",
-    "Kagarko",
-    "Kajuru",
     "Kaura",
     "Kauru",
     "Kubau",
@@ -981,20 +983,91 @@ function initials(firstName: string, lastName: string) {
   return `${first}${last}`.toUpperCase() || "ST";
 }
 
+function getFileExtension(file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase();
+
+  if (extension && /^[a-z0-9]+$/.test(extension)) {
+    return extension;
+  }
+
+  if (file.type === "image/png") return "png";
+  if (file.type === "image/webp") return "webp";
+  return "jpg";
+}
+
+function isAllowedImage(file: File) {
+  return [
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+  ].includes(file.type);
+}
+
+function getStoragePathFromPhoto(photo: string | null) {
+  if (!photo) return null;
+
+  /*
+   * Supports both:
+   *
+   * 1. Stored storage path:
+   *    user-id/profile.jpg
+   *
+   * 2. Full public URL:
+   *    https://.../storage/v1/object/public/student-profiles/user-id/profile.jpg
+   */
+  try {
+    if (photo.startsWith("http")) {
+      const marker = `/storage/v1/object/public/${PROFILE_BUCKET}/`;
+
+      const markerIndex = photo.indexOf(marker);
+
+      if (markerIndex !== -1) {
+        return decodeURIComponent(
+          photo.slice(markerIndex + marker.length),
+        );
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return photo;
+}
+
 export default function StudentProfilePage() {
   const supabase = useMemo(() => createClient(), []);
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [profile, setProfile] = useState<Profile | null>(null);
   const [student, setStudent] = useState<Student | null>(null);
-  const [classRecord, setClassRecord] = useState<ClassRecord | null>(null);
+  const [classRecord, setClassRecord] =
+    useState<ClassRecord | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const [photoUploading, setPhotoUploading] =
+    useState(false);
+
+  const [photoRemoving, setPhotoRemoving] =
+    useState(false);
+
+  const [saveMessage, setSaveMessage] =
+    useState<string | null>(null);
+
+  const [saveError, setSaveError] =
+    useState<string | null>(null);
+
+  const [photoMessage, setPhotoMessage] =
+    useState<string | null>(null);
+
+  const [photoError, setPhotoError] =
+    useState<string | null>(null);
 
   const [form, setForm] = useState<FormData>({
     first_name: "",
@@ -1026,12 +1099,14 @@ export default function StudentProfilePage() {
         throw new Error("You are not logged in.");
       }
 
-      const { data: profileData, error: profileError } =
-        await supabase
-          .from("profiles")
-          .select("first_name, last_name, email")
-          .eq("id", user.id)
-          .maybeSingle();
+      const {
+        data: profileData,
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .select("first_name, last_name, email")
+        .eq("id", user.id)
+        .maybeSingle();
 
       if (profileError) {
         throw new Error(
@@ -1039,31 +1114,33 @@ export default function StudentProfilePage() {
         );
       }
 
-      const { data: studentData, error: studentError } =
-        await supabase
-          .from("students")
-          .select(
-            `
-              id,
-              user_id,
-              student_id,
-              class_id,
-              admission_number,
-              admission_date,
-              date_of_birth,
-              status,
-              full_name,
-              phone,
-              address,
-              state,
-              lga,
-              guardian_name,
-              guardian_phone,
-              profile_photo
-            `,
-          )
-          .eq("user_id", user.id)
-          .maybeSingle();
+      const {
+        data: studentData,
+        error: studentError,
+      } = await supabase
+        .from("students")
+        .select(
+          `
+            id,
+            user_id,
+            student_id,
+            class_id,
+            admission_number,
+            admission_date,
+            date_of_birth,
+            status,
+            full_name,
+            phone,
+            address,
+            state,
+            lga,
+            guardian_name,
+            guardian_phone,
+            profile_photo
+          `,
+        )
+        .eq("user_id", user.id)
+        .maybeSingle();
 
       if (studentError) {
         throw new Error(
@@ -1080,12 +1157,14 @@ export default function StudentProfilePage() {
       let loadedClass: ClassRecord | null = null;
 
       if (studentData.class_id) {
-        const { data: classData, error: classError } =
-          await supabase
-            .from("classes")
-            .select("id, name")
-            .eq("id", studentData.class_id)
-            .maybeSingle();
+        const {
+          data: classData,
+          error: classError,
+        } = await supabase
+          .from("classes")
+          .select("id, name")
+          .eq("id", studentData.class_id)
+          .maybeSingle();
 
         if (!classError && classData) {
           loadedClass = classData;
@@ -1130,9 +1209,6 @@ export default function StudentProfilePage() {
   }, [supabase]);
 
   useEffect(() => {
-    // This fetch is intentionally triggered from mount to hydrate profile data
-    // from Supabase. The state updates happen after the async auth/data fetch
-    // resolves, and the lint rule is suppressed because it is not a render loop.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadProfile();
   }, [loadProfile]);
@@ -1154,15 +1230,22 @@ export default function StudentProfilePage() {
 
     setSaveMessage(null);
     setSaveError(null);
+    setPhotoMessage(null);
+    setPhotoError(null);
+
     setEditOpen(true);
   };
 
   const closeEdit = () => {
-    if (saving) return;
+    if (saving || photoUploading || photoRemoving) {
+      return;
+    }
 
     setEditOpen(false);
     setSaveError(null);
     setSaveMessage(null);
+    setPhotoError(null);
+    setPhotoMessage(null);
   };
 
   const updateForm = <K extends keyof FormData>(
@@ -1182,6 +1265,303 @@ export default function StudentProfilePage() {
       lga: "",
     }));
   };
+
+  /*
+   * =========================================================
+   * PROFILE PHOTO UPLOAD
+   * =========================================================
+   */
+
+  const uploadProfilePhoto = async (file: File) => {
+    if (!student) return;
+
+    setPhotoError(null);
+    setPhotoMessage(null);
+
+    if (!isAllowedImage(file)) {
+      setPhotoError(
+        "Please choose a JPG, PNG, or WebP image.",
+      );
+      return;
+    }
+
+    if (file.size > MAX_PROFILE_IMAGE_SIZE) {
+      setPhotoError(
+        "Profile photo must not be larger than 500 KB.",
+      );
+      return;
+    }
+
+    try {
+      setPhotoUploading(true);
+
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError) {
+        throw new Error(authError.message);
+      }
+
+      if (!user) {
+        throw new Error("Your login session has expired.");
+      }
+
+      const extension = getFileExtension(file);
+
+      /*
+       * Keep one predictable photo per student.
+       *
+       * Example:
+       * student-user-id/profile.jpg
+       */
+      const storagePath = `${user.id}/profile.${extension}`;
+
+      /*
+       * Delete previous versions first.
+       *
+       * This also handles the situation where the old file
+       * had a different extension.
+       */
+      const oldPhotoPath = getStoragePathFromPhoto(
+        student.profile_photo,
+      );
+
+      const possibleOldPaths = [
+        oldPhotoPath,
+        `${user.id}/profile.jpg`,
+        `${user.id}/profile.jpeg`,
+        `${user.id}/profile.png`,
+        `${user.id}/profile.webp`,
+      ].filter(
+        (path, index, array): path is string =>
+          Boolean(path) &&
+          array.indexOf(path) === index &&
+          path !== storagePath,
+      );
+
+      if (possibleOldPaths.length > 0) {
+        const {
+          error: removeOldError,
+        } = await supabase.storage
+          .from(PROFILE_BUCKET)
+          .remove(possibleOldPaths);
+
+        /*
+         * Don't fail the whole upload simply because an old
+         * file doesn't exist anymore.
+         */
+        if (removeOldError) {
+          console.warn(
+            "Unable to remove old profile photo:",
+            removeOldError.message,
+          );
+        }
+      }
+
+      /*
+       * Upload with upsert so the same profile path can
+       * safely be replaced.
+       */
+      const {
+        error: uploadError,
+      } = await supabase.storage
+        .from(PROFILE_BUCKET)
+        .upload(storagePath, file, {
+          cacheControl: "3600",
+          upsert: true,
+          contentType: file.type,
+        });
+
+      if (uploadError) {
+        throw new Error(
+          `Unable to upload your profile photo: ${uploadError.message}`,
+        );
+      }
+
+      /*
+       * Since your bucket is public, getPublicUrl gives us
+       * a URL that can be displayed directly by <img>.
+       */
+      const {
+        data: publicUrlData,
+      } = supabase.storage
+        .from(PROFILE_BUCKET)
+        .getPublicUrl(storagePath);
+
+      const publicUrl = publicUrlData.publicUrl;
+
+      if (!publicUrl) {
+        throw new Error(
+          "The photo uploaded, but its public URL could not be generated.",
+        );
+      }
+
+      /*
+       * Store the URL in students.profile_photo.
+       */
+      const {
+        error: databaseError,
+      } = await supabase
+        .from("students")
+        .update({
+          profile_photo: publicUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", student.id)
+        .eq("user_id", user.id);
+
+      if (databaseError) {
+        /*
+         * Roll back uploaded file if database update fails.
+         */
+        await supabase.storage
+          .from(PROFILE_BUCKET)
+          .remove([storagePath]);
+
+        throw new Error(
+          `Photo uploaded but could not be saved to your profile: ${databaseError.message}`,
+        );
+      }
+
+      /*
+       * Add a cache-busting query parameter so the browser
+       * doesn't continue showing the previous cached image.
+       */
+      const displayUrl = `${publicUrl}?v=${Date.now()}`;
+
+      setStudent((current) =>
+        current
+          ? {
+              ...current,
+              profile_photo: displayUrl,
+            }
+          : current,
+      );
+
+      setPhotoMessage(
+        "Profile photo updated successfully.",
+      );
+    } catch (err) {
+      console.error("Profile photo upload error:", err);
+
+      setPhotoError(
+        err instanceof Error
+          ? err.message
+          : "Unable to upload your profile photo.",
+      );
+    } finally {
+      setPhotoUploading(false);
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handlePhotoInput = (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    void uploadProfilePhoto(file);
+  };
+
+  const removeProfilePhoto = async () => {
+    if (!student) return;
+
+    setPhotoError(null);
+    setPhotoMessage(null);
+
+    if (!student.profile_photo) {
+      return;
+    }
+
+    try {
+      setPhotoRemoving(true);
+
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError) {
+        throw new Error(authError.message);
+      }
+
+      if (!user) {
+        throw new Error("Your login session has expired.");
+      }
+
+      const photoPath = getStoragePathFromPhoto(
+        student.profile_photo,
+      );
+
+      if (photoPath) {
+        const {
+          error: storageError,
+        } = await supabase.storage
+          .from(PROFILE_BUCKET)
+          .remove([photoPath]);
+
+        if (storageError) {
+          console.warn(
+            "Unable to remove photo from storage:",
+            storageError.message,
+          );
+        }
+      }
+
+      const {
+        error: databaseError,
+      } = await supabase
+        .from("students")
+        .update({
+          profile_photo: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", student.id)
+        .eq("user_id", user.id);
+
+      if (databaseError) {
+        throw new Error(
+          `Unable to remove your profile photo: ${databaseError.message}`,
+        );
+      }
+
+      setStudent((current) =>
+        current
+          ? {
+              ...current,
+              profile_photo: null,
+            }
+          : current,
+      );
+
+      setPhotoMessage(
+        "Profile photo removed successfully.",
+      );
+    } catch (err) {
+      console.error("Profile photo removal error:", err);
+
+      setPhotoError(
+        err instanceof Error
+          ? err.message
+          : "Unable to remove your profile photo.",
+      );
+    } finally {
+      setPhotoRemoving(false);
+    }
+  };
+
+  /*
+   * =========================================================
+   * SAVE PROFILE DETAILS
+   * =========================================================
+   */
 
   const saveProfile = async () => {
     if (!student || !profile) return;
@@ -1244,9 +1624,14 @@ export default function StudentProfilePage() {
       }
 
       /*
-       * Update profiles table.
+       * Update the authenticated user's profile record.
+       *
+       * This is what makes the new first/last name persistent
+       * in the profiles table.
        */
-      const { error: profileUpdateError } = await supabase
+      const {
+        error: profileUpdateError,
+      } = await supabase
         .from("profiles")
         .update({
           first_name: firstName,
@@ -1265,7 +1650,9 @@ export default function StudentProfilePage() {
        */
       const fullName = `${firstName} ${lastName}`.trim();
 
-      const { error: studentUpdateError } = await supabase
+      const {
+        error: studentUpdateError,
+      } = await supabase
         .from("students")
         .update({
           full_name: fullName,
@@ -1278,7 +1665,8 @@ export default function StudentProfilePage() {
           guardian_phone: guardianPhone || null,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", student.id);
+        .eq("id", student.id)
+        .eq("user_id", user.id);
 
       if (studentUpdateError) {
         throw new Error(
@@ -1313,7 +1701,9 @@ export default function StudentProfilePage() {
           : current,
       );
 
-      setSaveMessage("Your profile has been updated successfully.");
+      setSaveMessage(
+        "Your profile has been updated successfully.",
+      );
 
       window.setTimeout(() => {
         setEditOpen(false);
@@ -1340,9 +1730,11 @@ export default function StudentProfilePage() {
     ? `${profile.first_name} ${profile.last_name}`.trim()
     : "Student";
 
-  /* =========================================================
-     LOADING
-  ========================================================= */
+  /*
+   * =========================================================
+   * LOADING
+   * =========================================================
+   */
 
   if (loading) {
     return (
@@ -1365,9 +1757,11 @@ export default function StudentProfilePage() {
     );
   }
 
-  /* =========================================================
-     ERROR
-  ========================================================= */
+  /*
+   * =========================================================
+   * ERROR
+   * =========================================================
+   */
 
   if (error || !profile || !student) {
     return (
@@ -1405,14 +1799,14 @@ export default function StudentProfilePage() {
     );
   }
 
-  /* =========================================================
-     PAGE
-  ========================================================= */
+  /*
+   * =========================================================
+   * PAGE
+   * =========================================================
+   */
 
   return (
     <div className="min-h-full bg-slate-50">
-      {/* HEADER */}
-
       <section className="border-b border-slate-200 bg-white">
         <div className="px-5 py-7 sm:px-8 sm:py-9">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
@@ -1451,9 +1845,7 @@ export default function StudentProfilePage() {
 
       <main className="px-5 py-7 sm:px-8 sm:py-9">
         <div className="grid gap-5 lg:grid-cols-[0.72fr_1.28fr]">
-          {/* =================================================
-              PROFILE CARD
-          ================================================== */}
+          {/* PROFILE CARD */}
 
           <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_12px_45px_rgba(1,0,102,0.045)]">
             <div
@@ -1476,9 +1868,11 @@ export default function StudentProfilePage() {
 
               <div className="relative z-10 flex flex-col items-center text-center">
                 {student.profile_photo ? (
-                  <img
+                  <Image
                     src={student.profile_photo}
                     alt={displayName}
+                    width={112}
+                    height={112}
                     className="h-28 w-28 rounded-3xl border-4 border-white/20 object-cover shadow-xl"
                   />
                 ) : (
@@ -1548,9 +1942,7 @@ export default function StudentProfilePage() {
             </div>
           </section>
 
-          {/* =================================================
-              DETAILS
-          ================================================== */}
+          {/* DETAILS */}
 
           <div className="space-y-5">
             <InfoSection
@@ -1695,7 +2087,7 @@ export default function StudentProfilePage() {
           }}
         >
           <div className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-white/60 bg-white shadow-[0_30px_100px_rgba(0,0,77,0.25)]">
-            {/* MODAL HEADER */}
+            {/* HEADER */}
 
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-5 sm:px-7">
               <div>
@@ -1721,16 +2113,185 @@ export default function StudentProfilePage() {
               <button
                 type="button"
                 onClick={closeEdit}
-                disabled={saving}
+                disabled={
+                  saving ||
+                  photoUploading ||
+                  photoRemoving
+                }
                 className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <X size={18} />
               </button>
             </div>
 
-            {/* MODAL BODY */}
+            {/* BODY */}
 
             <div className="overflow-y-auto px-5 py-6 sm:px-7">
+              {/* PHOTO */}
+
+              <div className="mb-7">
+                <SectionLabel title="Profile Photo" />
+
+                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                  <div className="flex flex-col items-center gap-5 sm:flex-row">
+                    <div className="relative shrink-0">
+                      {student.profile_photo ? (
+                        <Image
+                          src={student.profile_photo}
+                          alt={displayName}
+                          width={112}
+                          height={112}
+                          unoptimized
+                          className="h-28 w-28 rounded-3xl border-4 border-white object-cover shadow-md"
+                        />
+                      ) : (
+                        <div
+                          className="flex h-28 w-28 items-center justify-center rounded-3xl border-4 border-white text-3xl font-black shadow-md"
+                          style={{
+                            backgroundColor: `${SCHOOL_BLUE}10`,
+                            color: SCHOOL_BLUE,
+                          }}
+                        >
+                          {initials(
+                            profile.first_name,
+                            profile.last_name,
+                          )}
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        disabled={
+                          photoUploading ||
+                          photoRemoving
+                        }
+                        onClick={() =>
+                          fileInputRef.current?.click()
+                        }
+                        className="absolute -bottom-2 -right-2 flex h-11 w-11 items-center justify-center rounded-full border-4 border-slate-50 text-white shadow-lg transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-60"
+                        style={{
+                          backgroundColor: SCHOOL_BLUE,
+                        }}
+                        title="Change profile photo"
+                      >
+                        {photoUploading ? (
+                          <Loader2
+                            size={17}
+                            className="animate-spin"
+                          />
+                        ) : (
+                          <Camera size={17} />
+                        )}
+                      </button>
+
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        capture="user"
+                        className="hidden"
+                        onChange={handlePhotoInput}
+                      />
+                    </div>
+
+                    <div className="min-w-0 flex-1 text-center sm:text-left">
+                      <p
+                        className="text-sm font-black"
+                        style={{
+                          color: SCHOOL_BLUE_DARK,
+                        }}
+                      >
+                        Profile picture
+                      </p>
+
+                      <p className="mt-1 text-xs leading-5 text-slate-400">
+                        Upload a clear photo of yourself.
+                        JPG, PNG or WebP only.
+                      </p>
+
+                      <p className="mt-1 text-[10px] font-bold text-slate-400">
+                        Maximum file size: 500 KB
+                      </p>
+
+                      <div className="mt-4 flex flex-wrap justify-center gap-2 sm:justify-start">
+                        <button
+                          type="button"
+                          disabled={
+                            photoUploading ||
+                            photoRemoving
+                          }
+                          onClick={() =>
+                            fileInputRef.current?.click()
+                          }
+                          className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-xs font-bold text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+                          style={{
+                            backgroundColor: SCHOOL_BLUE,
+                          }}
+                        >
+                          <ImageIcon size={14} />
+                          {student.profile_photo
+                            ? "Change Photo"
+                            : "Upload Photo"}
+                        </button>
+
+                        {student.profile_photo && (
+                          <button
+                            type="button"
+                            disabled={
+                              photoUploading ||
+                              photoRemoving
+                            }
+                            onClick={() =>
+                              void removeProfilePhoto()
+                            }
+                            className="inline-flex items-center gap-2 rounded-full border border-red-100 bg-white px-4 py-2.5 text-xs font-bold text-red-500 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {photoRemoving ? (
+                              <Loader2
+                                size={14}
+                                className="animate-spin"
+                              />
+                            ) : (
+                              <Trash2 size={14} />
+                            )}
+
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {photoError && (
+                    <div className="mt-4 flex items-start gap-2 rounded-2xl border border-red-100 bg-red-50 p-3">
+                      <AlertCircle
+                        size={16}
+                        className="mt-0.5 shrink-0 text-red-500"
+                      />
+
+                      <p className="text-[11px] font-medium leading-5 text-red-600">
+                        {photoError}
+                      </p>
+                    </div>
+                  )}
+
+                  {photoMessage && (
+                    <div className="mt-4 flex items-start gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
+                      <Check
+                        size={16}
+                        className="mt-0.5 shrink-0 text-emerald-600"
+                      />
+
+                      <p className="text-[11px] font-bold leading-5 text-emerald-700">
+                        {photoMessage}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* SAVE ERRORS */}
+
               {saveError && (
                 <div className="mb-5 flex items-start gap-3 rounded-2xl border border-red-100 bg-red-50 p-4">
                   <AlertCircle
@@ -1886,7 +2447,10 @@ export default function StudentProfilePage() {
                     label="Guardian Name"
                     value={form.guardian_name}
                     onChange={(value) =>
-                      updateForm("guardian_name", value)
+                      updateForm(
+                        "guardian_name",
+                        value,
+                      )
                     }
                     placeholder="Enter guardian name"
                   />
@@ -1905,7 +2469,7 @@ export default function StudentProfilePage() {
                 </div>
               </div>
 
-              {/* READ ONLY SCHOOL DATA */}
+              {/* SCHOOL DATA */}
 
               <div className="mt-7 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex items-start gap-3">
@@ -1918,7 +2482,9 @@ export default function StudentProfilePage() {
                   <div>
                     <p
                       className="text-xs font-black"
-                      style={{ color: SCHOOL_BLUE_DARK }}
+                      style={{
+                        color: SCHOOL_BLUE_DARK,
+                      }}
                     >
                       School records
                     </p>
@@ -1933,13 +2499,17 @@ export default function StudentProfilePage() {
               </div>
             </div>
 
-            {/* MODAL FOOTER */}
+            {/* FOOTER */}
 
             <div className="flex flex-col-reverse gap-3 border-t border-slate-100 bg-slate-50/70 px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
               <button
                 type="button"
                 onClick={closeEdit}
-                disabled={saving}
+                disabled={
+                  saving ||
+                  photoUploading ||
+                  photoRemoving
+                }
                 className="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Cancel
@@ -1948,9 +2518,15 @@ export default function StudentProfilePage() {
               <button
                 type="button"
                 onClick={() => void saveProfile()}
-                disabled={saving}
+                disabled={
+                  saving ||
+                  photoUploading ||
+                  photoRemoving
+                }
                 className="inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-70"
-                style={{ backgroundColor: SCHOOL_BLUE }}
+                style={{
+                  backgroundColor: SCHOOL_BLUE,
+                }}
               >
                 {saving ? (
                   <>
@@ -2106,6 +2682,7 @@ function InputField({
     <div>
       <label className="mb-2 block text-xs font-bold text-slate-600">
         {label}
+
         {required && (
           <span className="ml-1 text-red-400">*</span>
         )}
@@ -2114,7 +2691,9 @@ function InputField({
       <input
         type={type}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) =>
+          onChange(event.target.value)
+        }
         placeholder={placeholder}
         className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#010066]/30 focus:bg-white focus:ring-4 focus:ring-[#010066]/5"
       />
@@ -2183,6 +2762,7 @@ function ReadOnlyField({
 
       <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm text-slate-500">
         {icon}
+
         <span className="truncate">{value}</span>
       </div>
 
@@ -2220,7 +2800,9 @@ function SelectField({
         <select
           value={value}
           disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(event) =>
+            onChange(event.target.value)
+          }
           className="w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-10 text-sm text-slate-700 outline-none transition focus:border-[#010066]/30 focus:bg-white focus:ring-4 focus:ring-[#010066]/5 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <option value="">{placeholder}</option>
