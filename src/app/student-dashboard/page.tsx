@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { createClient } from "@/lib/supabase/client";
@@ -207,6 +208,7 @@ function formatAnnouncementDate(dateString: string | null) {
 ========================================================= */
 
 export default function StudentDashboardPage() {
+  const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
   const [data, setData] = useState<StudentDashboardData>(EMPTY_DATA);
@@ -236,12 +238,37 @@ export default function StudentDashboardPage() {
         error: authError,
       } = await supabase.auth.getUser();
 
+      /*
+       * IMPORTANT:
+       * Never expose the raw Supabase authentication error
+       * to the student.
+       */
+
       if (authError) {
-        throw new Error(authError.message);
+        console.error("Authentication error:", authError);
+
+        const authMessage = authError.message?.toLowerCase() ?? "";
+
+        if (
+          authMessage.includes("auth session missing") ||
+          authMessage.includes("session missing") ||
+          authMessage.includes("jwt") ||
+          authMessage.includes("session")
+        ) {
+          throw new Error(
+            "Your login session has expired. Please sign in again to continue.",
+          );
+        }
+
+        throw new Error(
+          "We couldn't verify your login session. Please sign in again to continue.",
+        );
       }
 
       if (!user) {
-        throw new Error("You are not logged in.");
+        throw new Error(
+          "Your login session has expired. Please sign in again to continue.",
+        );
       }
 
       console.log("✅ STEP 1 - AUTH USER:", {
@@ -266,7 +293,7 @@ export default function StudentDashboardPage() {
 
       if (profileError) {
         throw new Error(
-          `Unable to load profile: ${profileError.message}`,
+          "We couldn't load your student profile. Please try again.",
         );
       }
 
@@ -296,7 +323,7 @@ export default function StudentDashboardPage() {
 
       if (studentError) {
         throw new Error(
-          `Unable to load student record: ${studentError.message}`,
+          "We couldn't load your student record. Please try again.",
         );
       }
 
@@ -309,12 +336,7 @@ export default function StudentDashboardPage() {
       console.log("🎉 STUDENT FOUND:", student);
 
       /* =====================================================
-         IMPORTANT:
-         At this point we already have enough information to
-         display the student's profile.
-
-         We will immediately put the profile/student data
-         into React state.
+         BASIC STUDENT DATA
       ===================================================== */
 
       setData((previous) => ({
@@ -587,7 +609,7 @@ export default function StudentDashboardPage() {
           }
         } catch (resultException) {
           console.warn(
-            "⚠️ Results query exception:",
+            "⚠️ Result query exception:",
             resultException,
           );
         }
@@ -841,15 +863,50 @@ export default function StudentDashboardPage() {
       console.log("========================================");
     } catch (err) {
       console.error(
-        "❌ STUDENT DASHBOARD CRITICAL ERROR:",
+        "❌ STUDENT DASHBOARD ERROR:",
         err,
       );
 
-      setError(
+      /*
+       * IMPORTANT:
+       * Convert unexpected technical errors into a friendly
+       * message instead of exposing Supabase internals.
+       */
+
+      const rawMessage =
         err instanceof Error
           ? err.message
-          : "Unable to load your dashboard.",
-      );
+          : "";
+
+      const normalizedMessage =
+        rawMessage.toLowerCase();
+
+      if (
+        normalizedMessage.includes(
+          "auth session missing",
+        ) ||
+        normalizedMessage.includes(
+          "session missing",
+        ) ||
+        normalizedMessage.includes(
+          "jwt",
+        ) ||
+        normalizedMessage.includes(
+          "session has expired",
+        ) ||
+        normalizedMessage.includes(
+          "login session",
+        )
+      ) {
+        setError(
+          "Your login session has expired. Please sign in again to continue.",
+        );
+      } else {
+        setError(
+          rawMessage ||
+            "We couldn't load your dashboard right now. Please try again.",
+        );
+      }
 
       setLoading(false);
     }
@@ -947,6 +1004,22 @@ export default function StudentDashboardPage() {
   }, []);
 
   /* =======================================================
+     ERROR TYPE
+  ======================================================= */
+
+  const isSessionError = useMemo(() => {
+    if (!error) return false;
+
+    const message = error.toLowerCase();
+
+    return (
+      message.includes("login session") ||
+      message.includes("sign in again") ||
+      message.includes("session has expired")
+    );
+  }, [error]);
+
+  /* =======================================================
      LOADING STATE
   ======================================================= */
 
@@ -995,14 +1068,68 @@ export default function StudentDashboardPage() {
   if (error) {
     return (
       <div className="flex min-h-[70vh] items-center justify-center bg-slate-50 px-5">
-        <div className="w-full max-w-md rounded-3xl border border-red-100 bg-white p-7 text-center shadow-sm">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-500">
-            <ClipboardList size={24} />
+        <motion.div
+          initial={{
+            opacity: 0,
+            y: 15,
+          }}
+          animate={{
+            opacity: 1,
+            y: 0,
+          }}
+          transition={{
+            duration: 0.35,
+          }}
+          className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-7 text-center shadow-[0_15px_50px_rgba(1,0,102,0.06)]"
+        >
+          {/* ICON */}
+
+          <div
+            className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl"
+            style={{
+              backgroundColor: `${SCHOOL_BLUE}08`,
+              color: SCHOOL_BLUE,
+            }}
+          >
+            {isSessionError ? (
+              <svg
+                width="25"
+                height="25"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                <polyline points="10 17 15 12 10 7" />
+                <line
+                  x1="15"
+                  y1="12"
+                  x2="3"
+                  y2="12"
+                />
+              </svg>
+            ) : (
+              <ClipboardList size={24} />
+            )}
           </div>
 
-          <p className="mt-5 text-xs font-bold uppercase tracking-[0.18em] text-red-400">
-            Dashboard Error
+          {/* LABEL */}
+
+          <p
+            className="mt-5 text-[10px] font-bold uppercase tracking-[0.18em]"
+            style={{
+              color: SCHOOL_GOLD,
+            }}
+          >
+            {isSessionError
+              ? "Session Required"
+              : "Dashboard"}
           </p>
+
+          {/* TITLE */}
 
           <h1
             className="mt-2 text-xl font-black"
@@ -1010,28 +1137,62 @@ export default function StudentDashboardPage() {
               color: SCHOOL_BLUE_DARK,
             }}
           >
-            Unable to load dashboard
+            {isSessionError
+              ? "Please sign in again"
+              : "Unable to load dashboard"}
           </h1>
+
+          {/* MESSAGE */}
 
           <p className="mt-3 text-sm leading-6 text-slate-500">
             {error}
           </p>
 
-          <button
-            type="button"
-            onClick={() =>
-              setRetryCount(
-                (count) => count + 1,
-              )
-            }
-            className="mt-6 inline-flex items-center justify-center rounded-full px-6 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5"
-            style={{
-              backgroundColor: SCHOOL_BLUE,
-            }}
-          >
-            Try Again
-          </button>
-        </div>
+          {/* EXTRA SESSION MESSAGE */}
+
+          {isSessionError && (
+            <p className="mt-2 text-xs leading-5 text-slate-400">
+              Your account is safe. Sign in again to continue
+              accessing your student dashboard.
+            </p>
+          )}
+
+          {/* ACTIONS */}
+
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
+            {isSessionError ? (
+              <button
+                type="button"
+                onClick={() => {
+                  router.push("/student-login");
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-bold text-white transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg"
+                style={{
+                  backgroundColor: SCHOOL_BLUE,
+                }}
+              >
+                Sign In Again
+
+                <ArrowRight size={15} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() =>
+                  setRetryCount(
+                    (count) => count + 1,
+                  )
+                }
+                className="inline-flex items-center justify-center rounded-full px-6 py-3 text-sm font-bold text-white transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg"
+                style={{
+                  backgroundColor: SCHOOL_BLUE,
+                }}
+              >
+                Try Again
+              </button>
+            )}
+          </div>
+        </motion.div>
       </div>
     );
   }

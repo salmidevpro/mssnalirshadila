@@ -463,7 +463,7 @@ export default function AboutPage() {
                   className="mt-3 text-2xl font-bold tracking-[-0.025em]"
                   style={{
                     color: SCHOOL_BLUE_DARK,
-                    // textAlign: justify,
+                   
                   }}
                 >
                   To become a leading islamic school in the Nation (In Shaa Allah) which shall uphold; 
@@ -471,12 +471,11 @@ export default function AboutPage() {
                   in accordance with the understanding of the Salaf.
                 </h3>
 
-                {/* <p className="mt-4 text-sm leading-7 text-slate-500 sm:text-base">
-                  To become a leading Islamic educational institution that
-                  develops knowledgeable, principled, confident and
-                  responsible individuals who contribute positively to the
-                  advancement of society.
-                </p> */}
+                <p className="mt-4 text-sm leading-7 text-slate-500 sm:text-base">
+                   To become a leading islamic school in the Nation (In Shaa Allah) which shall uphold; 
+                  the Qur&apos;an and Sunnah of the holy Prophet Muhammad
+                  in accordance with the understanding of the Salaf.
+                </p> 
               </div>
             </motion.article>
 
