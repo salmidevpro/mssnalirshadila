@@ -1,27 +1,39 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Bell,
   BookOpen,
   CalendarDays,
   ChevronRight,
   ClipboardList,
+  CreditCard,
   GraduationCap,
   LayoutDashboard,
   LogOut,
   Menu,
-  Moon,
   Settings,
-  Sun,
   User,
   X,
 } from "lucide-react";
 
+import { createClient } from "@/lib/supabase/client";
+
 const SCHOOL_BLUE = "#010066";
 const SCHOOL_BLUE_DARK = "#00004D";
 const SCHOOL_GOLD = "#FFAF2E";
+
+type Student = {
+  id: string;
+  user_id: string;
+  full_name: string | null;
+  profile_photo: string | null;
+  admission_number: string | null;
+  student_id: string | null;
+  status: string | null;
+};
 
 const navigation = [
   {
@@ -45,6 +57,11 @@ const navigation = [
     icon: GraduationCap,
   },
   {
+    title: "Payments",
+    href: "/student-dashboard/payments",
+    icon: CreditCard,
+  },
+  {
     title: "Academic Calendar",
     href: "/student-dashboard/calendar",
     icon: CalendarDays,
@@ -66,17 +83,248 @@ export default function StudentDashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const supabase = useMemo(() => createClient(), []);
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const [student, setStudent] = useState<Student | null>(null);
+  const [loadingStudent, setLoadingStudent] = useState(true);
+  const [signingOut, setSigningOut] = useState(false);
+
+  /* =====================================================
+     LOAD LOGGED-IN STUDENT
+  ====================================================== */
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadStudent = async () => {
+      try {
+        setLoadingStudent(true);
+
+        /* -----------------------------------------------
+           GET AUTHENTICATED USER
+        ------------------------------------------------ */
+
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
+
+        if (authError) {
+          console.error("Authentication error:", authError);
+
+          if (mounted) {
+            setStudent(null);
+          }
+
+          router.replace("/student-login");
+          return;
+        }
+
+        if (!user) {
+          if (mounted) {
+            setStudent(null);
+          }
+
+          router.replace("/student-login");
+          return;
+        }
+
+        /* -----------------------------------------------
+           GET STUDENT RECORD
+        ------------------------------------------------ */
+
+        const { data, error } = await supabase
+          .from("students")
+          .select(
+            `
+              id,
+              user_id,
+              full_name,
+              profile_photo,
+              admission_number,
+              student_id,
+              status
+            `,
+          )
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (error) {
+          console.error("Student profile error:", error);
+
+          if (mounted) {
+            setStudent(null);
+          }
+
+          return;
+        }
+
+        if (!data) {
+          console.error(
+            "No student record found for authenticated user.",
+          );
+
+          if (mounted) {
+            setStudent(null);
+          }
+
+          return;
+        }
+
+        if (mounted) {
+          setStudent(data as Student);
+        }
+      } catch (error) {
+        console.error(
+          "Dashboard student loading error:",
+          error,
+        );
+
+        if (mounted) {
+          setStudent(null);
+        }
+      } finally {
+        if (mounted) {
+          setLoadingStudent(false);
+        }
+      }
+    };
+
+    void loadStudent();
+
+    return () => {
+      mounted = false;
+    };
+  }, [router, supabase]);
+
+  /* =====================================================
+     CLOSE MOBILE SIDEBAR WHEN ROUTE CHANGES
+  ====================================================== */
+
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
+
+  /* =====================================================
+     LOGOUT
+  ====================================================== */
+
+  const handleSignOut = async () => {
+    if (signingOut) {
+      return;
+    }
+
+    try {
+      setSigningOut(true);
+
+      const { error } = await supabase.auth.signOut();
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      /*
+       * Force a complete browser navigation.
+       * This prevents the student from remaining
+       * inside the protected dashboard after logout.
+       */
+
+      window.location.replace("/student-login");
+    } catch (error) {
+      console.error("Sign out error:", error);
+
+      setSigningOut(false);
+
+      /*
+       * Even if the local sign-out encounters an issue,
+       * don't leave the user stuck in the dashboard.
+       */
+
+      window.location.replace("/student-login");
+    }
+  };
+
+  /* =====================================================
+     STUDENT NAME
+  ====================================================== */
+
+  const studentName =
+    student?.full_name?.trim() || "Student";
+
+  /* =====================================================
+     STUDENT INITIALS
+  ====================================================== */
+
+  const getInitials = (name: string) => {
+    const words = name
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+
+    if (words.length === 0) {
+      return "ST";
+    }
+
+    if (words.length === 1) {
+      return words[0].slice(0, 2).toUpperCase();
+    }
+
+    return `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase();
+  };
+
+  const studentInitials = getInitials(studentName);
+
+  /* =====================================================
+     LOADING PROFILE
+  ====================================================== */
+
+  if (loadingStudent) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <aside className="fixed inset-y-0 left-0 hidden w-[270px] border-r border-slate-200 bg-white lg:flex lg:flex-col">
+          <div className="flex h-[82px] items-center border-b border-slate-200 px-5">
+            <div className="flex items-center gap-3">
+              <div className="h-11 w-11 animate-pulse rounded-xl bg-slate-200" />
+
+              <div>
+                <div className="h-3 w-32 animate-pulse rounded bg-slate-200" />
+
+                <div className="mt-2 h-2.5 w-24 animate-pulse rounded bg-slate-100" />
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3 px-4 py-6">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((item) => (
+              <div
+                key={item}
+                className="h-11 animate-pulse rounded-xl bg-slate-100"
+              />
+            ))}
+          </div>
+        </aside>
+
+        <div className="lg:pl-[270px]">
+          <header className="h-[82px] border-b border-slate-200 bg-white" />
+
+          <main className="min-h-[calc(100vh-82px)] p-5 sm:p-8">
+            <div className="mx-auto max-w-5xl space-y-6">
+              <div className="h-48 animate-pulse rounded-3xl bg-white" />
+
+              <div className="h-72 animate-pulse rounded-3xl bg-white" />
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div
-      className={`min-h-screen ${
-        darkMode
-          ? "bg-slate-950 text-white"
-          : "bg-slate-50 text-slate-900"
-      }`}
-    >
+    <div className="min-h-screen bg-slate-50 text-slate-900">
       {/* =====================================================
           MOBILE SIDEBAR OVERLAY
       ====================================================== */}
@@ -95,11 +343,7 @@ export default function StudentDashboardLayout({
       ====================================================== */}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-[270px] flex-col border-r transition-transform duration-300 ${
-          darkMode
-            ? "border-white/10 bg-slate-900"
-            : "border-slate-200 bg-white"
-        } ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-[270px] flex-col border-r border-slate-200 bg-white transition-transform duration-300 ${
           sidebarOpen
             ? "translate-x-0"
             : "-translate-x-full lg:translate-x-0"
@@ -109,13 +353,7 @@ export default function StudentDashboardLayout({
             SIDEBAR HEADER
         ================================================== */}
 
-        <div
-          className={`flex h-[82px] shrink-0 items-center border-b px-5 ${
-            darkMode
-              ? "border-white/10"
-              : "border-slate-200"
-          }`}
-        >
+        <div className="flex h-[82px] shrink-0 items-center border-b border-slate-200 px-5">
           <Link
             href="/student-dashboard"
             onClick={() => setSidebarOpen(false)}
@@ -132,18 +370,14 @@ export default function StudentDashboardLayout({
             <div>
               <p
                 className="text-sm font-black leading-tight"
-                style={{ color: SCHOOL_BLUE }}
+                style={{
+                  color: SCHOOL_BLUE,
+                }}
               >
                 MSSN AL-IRSHAD
               </p>
 
-              <p
-                className={`mt-0.5 text-[10px] font-semibold tracking-wide ${
-                  darkMode
-                    ? "text-white/40"
-                    : "text-slate-400"
-                }`}
-              >
+              <p className="mt-0.5 text-[10px] font-semibold tracking-wide text-slate-400">
                 STUDENT DASHBOARD
               </p>
             </div>
@@ -153,11 +387,7 @@ export default function StudentDashboardLayout({
             type="button"
             onClick={() => setSidebarOpen(false)}
             aria-label="Close sidebar"
-            className={`ml-auto flex h-9 w-9 items-center justify-center rounded-lg lg:hidden ${
-              darkMode
-                ? "text-white/60 hover:bg-white/10"
-                : "text-slate-500 hover:bg-slate-100"
-            }`}
+            className="ml-auto flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 lg:hidden"
           >
             <X size={19} />
           </button>
@@ -168,13 +398,7 @@ export default function StudentDashboardLayout({
         ================================================== */}
 
         <nav className="flex-1 overflow-y-auto px-4 py-6">
-          <p
-            className={`mb-3 px-3 text-[10px] font-bold uppercase tracking-[0.2em] ${
-              darkMode
-                ? "text-white/30"
-                : "text-slate-400"
-            }`}
-          >
+          <p className="mb-3 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
             Student Menu
           </p>
 
@@ -182,28 +406,54 @@ export default function StudentDashboardLayout({
             {navigation.map((item) => {
               const Icon = item.icon;
 
+              const isActive =
+                item.href === "/student-dashboard"
+                  ? pathname === "/student-dashboard"
+                  : pathname.startsWith(item.href);
+
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   onClick={() => setSidebarOpen(false)}
                   className={`group flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold transition-all duration-200 ${
-                    darkMode
-                      ? "text-white/60 hover:bg-white/5 hover:text-white"
+                    isActive
+                      ? "bg-[#010066]/[0.07] text-[#010066]"
                       : "text-slate-600 hover:bg-slate-100 hover:text-[#010066]"
                   }`}
                 >
                   <Icon
                     size={19}
-                    className="shrink-0"
+                    className={`shrink-0 ${
+                      isActive
+                        ? "text-[#010066]"
+                        : ""
+                    }`}
                   />
 
                   <span>{item.title}</span>
 
-                  {item.href === "/student-dashboard" && (
+                  {isActive &&
+                    item.href !==
+                      "/student-dashboard" && (
+                      <span
+                        className="ml-auto h-1.5 w-1.5 rounded-full"
+                        style={{
+                          backgroundColor:
+                            SCHOOL_GOLD,
+                        }}
+                      />
+                    )}
+
+                  {item.href ===
+                    "/student-dashboard" && (
                     <ChevronRight
                       size={15}
-                      className="ml-auto opacity-40 transition-transform group-hover:translate-x-0.5"
+                      className={`ml-auto transition-transform group-hover:translate-x-0.5 ${
+                        isActive
+                          ? "opacity-100"
+                          : "opacity-40"
+                      }`}
                     />
                   )}
                 </Link>
@@ -216,55 +466,54 @@ export default function StudentDashboardLayout({
             SIDEBAR PROFILE
         ================================================== */}
 
-        <div
-          className={`shrink-0 border-t p-4 ${
-            darkMode
-              ? "border-white/10"
-              : "border-slate-200"
-          }`}
-        >
-          <div
-            className={`flex items-center gap-3 rounded-xl p-3 ${
-              darkMode
-                ? "bg-white/5"
-                : "bg-slate-50"
-            }`}
-          >
+        <div className="shrink-0 border-t border-slate-200 p-4">
+          <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
+            {/* PROFILE PHOTO */}
+
             <div
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
+              className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-bold text-white"
               style={{
                 backgroundColor: SCHOOL_BLUE,
               }}
             >
-              AA
+              {student?.profile_photo ? (
+                <img
+                  src={student.profile_photo}
+                  alt={studentName}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                studentInitials
+              )}
             </div>
 
+            {/* STUDENT NAME */}
+
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-bold">
-                Abdulsalam Abdulazeez
+              <p className="truncate text-sm font-bold text-slate-800">
+                {studentName}
               </p>
 
-              <p
-                className={`truncate text-[11px] ${
-                  darkMode
-                    ? "text-white/40"
-                    : "text-slate-400"
-                }`}
-              >
+              <p className="truncate text-[11px] text-slate-400">
                 Student
               </p>
             </div>
 
+            {/* LOGOUT */}
+
             <button
               type="button"
-              aria-label="Logout"
-              className={`rounded-lg p-2 transition-colors ${
-                darkMode
-                  ? "text-white/40 hover:bg-white/10 hover:text-white"
-                  : "text-slate-400 hover:bg-slate-200 hover:text-[#010066]"
-              }`}
+              onClick={() => void handleSignOut()}
+              disabled={signingOut}
+              aria-label="Sign out"
+              title="Sign out"
+              className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <LogOut size={17} />
+              {signingOut ? (
+                <span className="block h-[17px] w-[17px] animate-spin rounded-full border-2 border-slate-300 border-t-[#010066]" />
+              ) : (
+                <LogOut size={17} />
+              )}
             </button>
           </div>
         </div>
@@ -279,66 +528,40 @@ export default function StudentDashboardLayout({
             TOPBAR
         ================================================== */}
 
-        <header
-          className={`sticky top-0 z-30 border-b backdrop-blur-xl ${
-            darkMode
-              ? "border-white/10 bg-slate-950/90"
-              : "border-slate-200 bg-white/90"
-          }`}
-        >
+        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur-xl">
           <div className="flex h-[82px] items-center px-5 sm:px-8">
-            {/* Mobile menu */}
+            {/* MOBILE MENU */}
 
             <button
               type="button"
               onClick={() => setSidebarOpen(true)}
               aria-label="Open dashboard menu"
-              className={`flex h-10 w-10 items-center justify-center rounded-xl lg:hidden ${
-                darkMode
-                  ? "bg-white/5 text-white"
-                  : "bg-slate-100 text-slate-700"
-              }`}
+              className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700 transition hover:bg-slate-200 lg:hidden"
             >
               <Menu size={21} />
             </button>
 
-            {/* Desktop identity */}
+            {/* DESKTOP IDENTITY */}
 
             <div className="ml-3 hidden lg:block">
-              <p
-                className={`text-[10px] font-semibold uppercase tracking-wider ${
-                  darkMode
-                    ? "text-white/35"
-                    : "text-slate-400"
-                }`}
-              >
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                 Student Portal
               </p>
 
-              <p
-                className={`mt-1 text-sm font-bold ${
-                  darkMode
-                    ? "text-white"
-                    : "text-slate-800"
-                }`}
-              >
+              <p className="mt-1 text-sm font-bold text-slate-800">
                 MSSN Al-Irshad Model School
               </p>
             </div>
 
-            {/* Right controls */}
+            {/* RIGHT CONTROLS */}
 
             <div className="ml-auto flex items-center gap-2">
-              {/* Notifications */}
+              {/* NOTIFICATIONS */}
 
               <button
                 type="button"
                 aria-label="Notifications"
-                className={`relative flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${
-                  darkMode
-                    ? "bg-white/5 text-white/70 hover:bg-white/10"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
+                className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600 transition-colors hover:bg-slate-200"
               >
                 <Bell size={18} />
 
@@ -350,63 +573,36 @@ export default function StudentDashboardLayout({
                 />
               </button>
 
-              {/* Theme */}
+              {/* USER PROFILE */}
 
-              <button
-                type="button"
-                onClick={() =>
-                  setDarkMode((value) => !value)
-                }
-                aria-label="Toggle theme"
-                className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${
-                  darkMode
-                    ? "bg-white/5 text-white/70 hover:bg-white/10"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
-              >
-                {darkMode ? (
-                  <Sun size={18} />
-                ) : (
-                  <Moon size={18} />
-                )}
-              </button>
+              <div className="ml-1 hidden items-center gap-3 rounded-xl bg-slate-100 px-3 py-2 sm:flex">
+                {/* PROFILE PHOTO */}
 
-              {/* User */}
-
-              <div
-                className={`ml-1 hidden items-center gap-3 rounded-xl px-3 py-2 sm:flex ${
-                  darkMode
-                    ? "bg-white/5"
-                    : "bg-slate-100"
-                }`}
-              >
                 <div
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white"
+                  className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full text-xs font-bold text-white"
                   style={{
                     backgroundColor: SCHOOL_BLUE,
                   }}
                 >
-                  AA
+                  {student?.profile_photo ? (
+                    <img
+                      src={student.profile_photo}
+                      alt={studentName}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    studentInitials
+                  )}
                 </div>
 
+                {/* NAME */}
+
                 <div className="hidden md:block">
-                  <p
-                    className={`text-xs font-bold ${
-                      darkMode
-                        ? "text-white"
-                        : "text-slate-800"
-                    }`}
-                  >
-                    Abdulsalam Abdulazeez
+                  <p className="max-w-[180px] truncate text-xs font-bold text-slate-800">
+                    {studentName}
                   </p>
 
-                  <p
-                    className={`text-[10px] ${
-                      darkMode
-                        ? "text-white/40"
-                        : "text-slate-400"
-                    }`}
-                  >
+                  <p className="text-[10px] text-slate-400">
                     Student
                   </p>
                 </div>
