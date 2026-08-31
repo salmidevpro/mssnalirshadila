@@ -137,6 +137,132 @@ function getGradeClass(grade: string | null) {
 }
 
 /* =========================================================
+   FRIENDLY ERROR MESSAGE
+========================================================= */
+
+function getFriendlyErrorMessage(error: unknown) {
+  const message =
+    error instanceof Error
+      ? error.message
+      : String(error ?? "");
+
+  const normalized = message.toLowerCase();
+
+  /* -------------------------------------------------------
+     AUTHENTICATION
+  ------------------------------------------------------- */
+
+  if (
+    normalized.includes("auth session missing") ||
+    normalized.includes("session missing") ||
+    normalized.includes("jwt") ||
+    normalized.includes("not logged in") ||
+    normalized.includes("invalid refresh token") ||
+    normalized.includes("refresh token")
+  ) {
+    return {
+      title: "Your session has ended",
+      message:
+        "For your security, your session has expired. Please sign in again to continue viewing your academic results.",
+    };
+  }
+
+  /* -------------------------------------------------------
+     STUDENT RECORD
+  ------------------------------------------------------- */
+
+  if (
+    normalized.includes("student record") ||
+    normalized.includes("student record could not be found") ||
+    normalized.includes("no student record")
+  ) {
+    return {
+      title: "Student information unavailable",
+      message:
+        "We could not find the student information connected to this account. Please contact the school office if you believe this is a mistake.",
+    };
+  }
+
+  /* -------------------------------------------------------
+     PROFILE
+  ------------------------------------------------------- */
+
+  if (
+    normalized.includes("profile") ||
+    normalized.includes("unable to load profile")
+  ) {
+    return {
+      title: "Unable to load your profile",
+      message:
+        "We couldn't retrieve your student profile right now. Please try again in a moment.",
+    };
+  }
+
+  /* -------------------------------------------------------
+     RESULTS
+  ------------------------------------------------------- */
+
+  if (
+    normalized.includes("results") ||
+    normalized.includes("unable to load results")
+  ) {
+    return {
+      title: "Your results couldn't be loaded",
+      message:
+        "We couldn't retrieve your academic results right now. Please try again in a moment. If the problem continues, please contact the school.",
+    };
+  }
+
+  /* -------------------------------------------------------
+     DATABASE / NETWORK
+  ------------------------------------------------------- */
+
+  if (
+    normalized.includes("network") ||
+    normalized.includes("fetch failed") ||
+    normalized.includes("failed to fetch") ||
+    normalized.includes("timeout") ||
+    normalized.includes("timed out") ||
+    normalized.includes("connection")
+  ) {
+    return {
+      title: "Connection problem",
+      message:
+        "We couldn't connect to the school system right now. Please check your internet connection and try again.",
+    };
+  }
+
+  /* -------------------------------------------------------
+     PERMISSION / ACCESS
+  ------------------------------------------------------- */
+
+  if (
+    normalized.includes("permission") ||
+    normalized.includes("forbidden") ||
+    normalized.includes("not authorized") ||
+    normalized.includes("unauthorized") ||
+    normalized.includes("row level security") ||
+    normalized.includes("rls")
+  ) {
+    return {
+      title: "Access temporarily unavailable",
+      message:
+        "Your results could not be accessed at the moment. Please try again shortly. If the problem continues, please contact the school.",
+    };
+  }
+
+  /* -------------------------------------------------------
+     DEFAULT
+  ------------------------------------------------------- */
+
+  return {
+    title: "We couldn't load your results",
+    message:
+      "Something went wrong while loading your academic results. Please try again. If the problem continues, please contact the school for assistance.",
+  };
+}
+
+/* =========================================================
    PAGE
 ========================================================= */
 
@@ -582,20 +708,31 @@ export default function StudentResultsPage() {
     );
   }
 
-  /* =======================================================
+   /* =======================================================
      ERROR
   ======================================================= */
 
   if (error) {
     return (
       <div className="flex min-h-[70vh] items-center justify-center bg-slate-50 px-5">
-        <div className="w-full max-w-md rounded-3xl border border-red-100 bg-white p-7 text-center shadow-sm">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-7 text-center shadow-sm">
+          <div
+            className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl"
+            style={{
+              backgroundColor: `${SCHOOL_BLUE}08`,
+              color: SCHOOL_BLUE,
+            }}
+          >
             <GraduationCap size={24} />
           </div>
 
-          <p className="mt-5 text-xs font-bold uppercase tracking-[0.18em] text-red-400">
-            Results Error
+          <p
+            className="mt-5 text-xs font-bold uppercase tracking-[0.18em]"
+            style={{
+              color: SCHOOL_GOLD,
+            }}
+          >
+            Results
           </p>
 
           <h1
@@ -604,25 +741,23 @@ export default function StudentResultsPage() {
               color: SCHOOL_BLUE_DARK,
             }}
           >
-            Unable to load results
+            Login required
           </h1>
 
           <p className="mt-3 text-sm leading-6 text-slate-500">
-            {error}
+            Please sign in again to continue viewing your
+            academic results.
           </p>
 
-          <button
-            type="button"
-            onClick={() =>
-              setRetryCount((count) => count + 1)
-            }
-            className="mt-6 rounded-full px-6 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5"
+          <Link
+            href="/student-login"
+            className="mt-6 inline-flex rounded-full px-6 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5"
             style={{
               backgroundColor: SCHOOL_BLUE,
             }}
           >
-            Try Again
-          </button>
+            sign in here
+          </Link>
         </div>
       </div>
     );

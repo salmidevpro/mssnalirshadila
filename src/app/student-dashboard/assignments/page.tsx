@@ -498,43 +498,50 @@ export default function StudentAssignmentsPage() {
     );
   }
 
-  /* =====================================================
-     ERROR
-  ====================================================== */
 
-  if (error) {
+    if (error) {
     return (
       <div className="flex min-h-[70vh] items-center justify-center bg-slate-50 px-5">
-        <div className="w-full max-w-md rounded-3xl border border-red-100 bg-white p-7 text-center shadow-sm">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-7 text-center shadow-sm">
+          <div
+            className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl"
+            style={{
+              backgroundColor: `${SCHOOL_BLUE}08`,
+              color: SCHOOL_BLUE,
+            }}
+          >
             <FileText size={24} />
           </div>
 
-          <p className="mt-5 text-xs font-bold uppercase tracking-[0.18em] text-red-400">
-            Assignments Error
+          <p
+            className="mt-5 text-xs font-bold uppercase tracking-[0.18em]"
+            style={{
+              color: SCHOOL_GOLD,
+            }}
+          >
+            Assignments
           </p>
 
           <h1
             className="mt-2 text-xl font-black"
             style={{ color: SCHOOL_BLUE_DARK }}
           >
-            Unable to load assignments
+            Login required
           </h1>
 
           <p className="mt-3 text-sm leading-6 text-slate-500">
-            {error}
+            Please sign in again to continue viewing your assignments.
           </p>
 
-          <button
-            type="button"
-            onClick={() => void loadAssignments()}
-            className="mt-6 rounded-full px-6 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5"
+          <Link
+            href="/student-login"
+            className="mt-6 inline-flex items-center justify-center rounded-full px-6 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5"
             style={{
               backgroundColor: SCHOOL_BLUE,
             }}
           >
-            Try Again
-          </button>
+            Sign in here
+          </Link>
         </div>
       </div>
     );

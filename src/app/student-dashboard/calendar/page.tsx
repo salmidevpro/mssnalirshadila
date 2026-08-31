@@ -69,10 +69,6 @@ type CalendarEvent = {
   status: string;
 };
 
-type Student = {
-  id: string;
-};
-
 /* =====================================================
    HELPERS
 ===================================================== */
@@ -93,7 +89,10 @@ function getDateKey(date: Date) {
     2,
     "0",
   );
-  const day = String(date.getDate()).padStart(2, "0");
+  const day = String(date.getDate()).padStart(
+    2,
+    "0",
+  );
 
   return `${year}-${month}-${day}`;
 }
@@ -147,6 +146,10 @@ export default function StudentAcademicCalendarPage() {
     () => createClient(),
     [],
   );
+
+  type Student = {
+    id: string;
+  };
 
   const [student, setStudent] =
     useState<Student | null>(null);
@@ -207,12 +210,23 @@ export default function StudentAcademicCalendarPage() {
         } = await supabase.auth.getUser();
 
         if (authError) {
-          throw new Error(authError.message);
+          console.error(
+            "Academic calendar authentication error:",
+            authError,
+          );
+
+          throw new Error(
+            "Please sign in again to continue.",
+          );
         }
 
         if (!user) {
+          console.error(
+            "Academic calendar: no authenticated user found.",
+          );
+
           throw new Error(
-            "You are not logged in.",
+            "Please sign in again to continue.",
           );
         }
 
@@ -230,14 +244,23 @@ export default function StudentAcademicCalendarPage() {
           .maybeSingle();
 
         if (studentError) {
+          console.error(
+            "Academic calendar student record error:",
+            studentError,
+          );
+
           throw new Error(
-            `Unable to load student record: ${studentError.message}`,
+            "We couldn't load your student profile right now. Please try again.",
           );
         }
 
         if (!studentData) {
+          console.error(
+            "Academic calendar: student record not found for authenticated user.",
+          );
+
           throw new Error(
-            "Your student record could not be found.",
+            "We couldn't find your student profile. Please contact the school administrator.",
           );
         }
 
@@ -257,14 +280,23 @@ export default function StudentAcademicCalendarPage() {
           .maybeSingle();
 
         if (sessionError) {
+          console.error(
+            "Academic calendar session error:",
+            sessionError,
+          );
+
           throw new Error(
-            `Unable to load academic session: ${sessionError.message}`,
+            "We couldn't load the current academic session. Please try again.",
           );
         }
 
         if (!sessionData) {
+          console.error(
+            "Academic calendar: no current academic session configured.",
+          );
+
           throw new Error(
-            "No current academic session has been configured.",
+            "The current academic session has not been configured yet. Please check back later.",
           );
         }
 
@@ -288,8 +320,13 @@ export default function StudentAcademicCalendarPage() {
           .maybeSingle();
 
         if (termError) {
+          console.error(
+            "Academic calendar term error:",
+            termError,
+          );
+
           throw new Error(
-            `Unable to load academic term: ${termError.message}`,
+            "We couldn't load the current academic term. Please try again.",
           );
         }
 
@@ -323,8 +360,13 @@ export default function StudentAcademicCalendarPage() {
           );
 
         if (registrationError) {
+          console.error(
+            "Academic calendar course registration error:",
+            registrationError,
+          );
+
           throw new Error(
-            `Unable to load your registered courses: ${registrationError.message}`,
+            "We couldn't load your registered courses right now. Please try again.",
           );
         }
 
@@ -406,8 +448,13 @@ export default function StudentAcademicCalendarPage() {
           );
 
         if (assignmentError) {
+          console.error(
+            "Academic calendar assignment error:",
+            assignmentError,
+          );
+
           throw new Error(
-            `Unable to load assignment dates: ${assignmentError.message}`,
+            "We couldn't load your assignment dates right now. Please try again.",
           );
         }
 
@@ -426,7 +473,7 @@ export default function StudentAcademicCalendarPage() {
         setError(
           err instanceof Error
             ? err.message
-            : "Unable to load academic calendar.",
+            : "We couldn't load your academic calendar right now. Please try again.",
         );
       } finally {
         setLoading(false);
@@ -440,8 +487,16 @@ export default function StudentAcademicCalendarPage() {
      INITIAL LOAD
   ====================================================== */
 
+  // This initial fetch hydrates the page state from Supabase without triggering
+  // a synchronous state update during the effect pass.
   useEffect(() => {
-    void loadCalendar();
+    const initialLoad = () => {
+      void loadCalendar();
+    };
+
+    const timeoutId = setTimeout(initialLoad, 0);
+
+    return () => clearTimeout(timeoutId);
   }, [loadCalendar]);
 
   /* =====================================================
@@ -684,9 +739,9 @@ export default function StudentAcademicCalendarPage() {
             <div className="h-28 animate-pulse rounded-3xl bg-white" />
 
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-              <div className="h-[620px] animate-pulse rounded-3xl bg-white" />
+              <div className="h-155 animate-pulse rounded-3xl bg-white" />
 
-              <div className="h-[620px] animate-pulse rounded-3xl bg-white" />
+              <div className="h-155 animate-pulse rounded-3xl bg-white" />
             </div>
           </div>
         </main>
@@ -707,7 +762,7 @@ export default function StudentAcademicCalendarPage() {
           </div>
 
           <p className="mt-5 text-[10px] font-black uppercase tracking-[0.2em] text-red-400">
-            Calendar Error
+            Something went wrong
           </p>
 
           <h1
@@ -716,7 +771,7 @@ export default function StudentAcademicCalendarPage() {
               color: SCHOOL_BLUE_DARK,
             }}
           >
-            Unable to load calendar
+            We couldn&apos;t load your calendar
           </h1>
 
           <p className="mt-3 text-sm leading-6 text-slate-500">
@@ -1060,7 +1115,7 @@ export default function StudentAcademicCalendarPage() {
                             : "bg-white"
                         } ${
                           isSelected
-                            ? "bg-[#010066]/[0.025]"
+                            ? "bg-[#010066]/2.5"
                             : "hover:bg-slate-50"
                         }`}
                       >
@@ -1358,7 +1413,7 @@ export default function StudentAcademicCalendarPage() {
                       />
 
                       <p className="mt-3 text-xs font-bold text-slate-500">
-                        You're all caught up
+                        You&apos;re all caught up
                       </p>
 
                       <p className="mt-1 text-[10px] leading-5 text-slate-400">
@@ -1536,3 +1591,4 @@ export default function StudentAcademicCalendarPage() {
     </div>
   );
 }
+

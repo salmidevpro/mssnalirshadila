@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlertCircle,
   Bell,
   Check,
   ChevronRight,
@@ -8,15 +9,13 @@ import {
   KeyRound,
   LogOut,
   Mail,
-  Moon,
   ShieldCheck,
-  Sun,
   UserRound,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { createClient } from "@/lib/supabase/client";
 
@@ -42,8 +41,6 @@ type Student = {
   admission_date: string | null;
 };
 
-type Appearance = "light" | "dark";
-
 export default function StudentSettingsPage() {
   const router = useRouter();
 
@@ -54,6 +51,8 @@ export default function StudentSettingsPage() {
 
   const [loading, setLoading] = useState(true);
 
+  const [error, setError] = useState<string | null>(null);
+
   const [assignmentNotifications, setAssignmentNotifications] =
     useState(true);
 
@@ -62,9 +61,6 @@ export default function StudentSettingsPage() {
 
   const [announcementNotifications, setAnnouncementNotifications] =
     useState(true);
-
-  const [appearance, setAppearance] =
-    useState<Appearance>("light");
 
   const [message, setMessage] =
     useState<string | null>(null);
@@ -107,82 +103,51 @@ export default function StudentSettingsPage() {
   };
 
   /* =====================================================
-     APPLY APPEARANCE
-  ====================================================== */
-
-  const applyAppearance = (
-    theme: Appearance,
-  ) => {
-    setAppearance(theme);
-
-    if (typeof document !== "undefined") {
-      document.documentElement.classList.toggle(
-        "dark",
-        theme === "dark",
-      );
-
-      localStorage.setItem(
-        "student-portal-appearance",
-        theme,
-      );
-    }
-  };
-
-  /* =====================================================
      LOAD STUDENT
   ====================================================== */
 
-  useEffect(() => {
-    const loadStudent = async () => {
-      try {
-        setLoading(true);
+  const loadStudent = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-        /* -----------------------------------------------
-           LOAD SAVED APPEARANCE
-        ------------------------------------------------ */
+      /* -----------------------------------------------
+         GET AUTHENTICATED USER
+      ------------------------------------------------ */
 
-        const savedAppearance =
-          localStorage.getItem(
-            "student-portal-appearance",
-          ) as Appearance | null;
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
 
-        if (
-          savedAppearance === "light" ||
-          savedAppearance === "dark"
-        ) {
-          setAppearance(savedAppearance);
+      if (authError) {
+        throw new Error(
+          authError.message ||
+            "Unable to verify your account.",
+        );
+      }
 
-          document.documentElement.classList.toggle(
-            "dark",
-            savedAppearance === "dark",
-          );
-        }
+      /* -----------------------------------------------
+         USER NOT SIGNED IN
+      ------------------------------------------------ */
 
-        /* -----------------------------------------------
-           GET USER
-        ------------------------------------------------ */
+      if (!user) {
+        setStudent(null);
+        setEmail("");
 
-        const {
-          data: { user },
-          error: authError,
-        } = await supabase.auth.getUser();
+        setError("LOGIN_REQUIRED");
 
-        if (authError) {
-          throw new Error(authError.message);
-        }
+        return;
+      }
 
-        if (!user) {
-          router.replace("/login");
-          return;
-        }
+      setEmail(user.email ?? "");
 
-        setEmail(user.email ?? "");
+      /* -----------------------------------------------
+         GET STUDENT RECORD
+      ------------------------------------------------ */
 
-        /* -----------------------------------------------
-           GET STUDENT
-        ------------------------------------------------ */
-
-        const { data, error } = await supabase
+      const { data, error: studentError } =
+        await supabase
           .from("students")
           .select(
             `
@@ -206,32 +171,52 @@ export default function StudentSettingsPage() {
           .eq("user_id", user.id)
           .maybeSingle();
 
-        if (error) {
-          throw new Error(
-            `Unable to load student profile: ${error.message}`,
-          );
-        }
-
-        setStudent(data ?? null);
-      } catch (error) {
-        console.error(
-          "Settings load error:",
-          error,
+      if (studentError) {
+        throw new Error(
+          `Unable to load your student profile: ${studentError.message}`,
         );
-
-        showMessage(
-          error instanceof Error
-            ? error.message
-            : "Unable to load your account.",
-          "error",
-        );
-      } finally {
-        setLoading(false);
       }
-    };
 
-    void loadStudent();
-  }, [router, supabase]);
+      /* -----------------------------------------------
+         STUDENT RECORD NOT FOUND
+      ------------------------------------------------ */
+
+      if (!data) {
+        throw new Error(
+          "Your student account could not be found. Please contact the school administration.",
+        );
+      }
+
+      setStudent(data);
+    } catch (err) {
+      console.error(
+        "Settings load error:",
+        err,
+      );
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load your account settings.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [supabase]);
+
+  /* =====================================================
+     INITIAL LOAD
+  ====================================================== */
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      void loadStudent();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [loadStudent]);
 
   /* =====================================================
      CHANGE PASSWORD
@@ -287,18 +272,29 @@ export default function StudentSettingsPage() {
       setChangingPassword(true);
 
       /* -----------------------------------------------
-         VERIFY CURRENT PASSWORD
+         GET CURRENT USER
       ------------------------------------------------ */
 
       const {
         data: { user },
+        error: userError,
       } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw new Error(
+          "Unable to verify your account. Please sign in again.",
+        );
+      }
 
       if (!user?.email) {
         throw new Error(
-          "Your authenticated account could not be found.",
+          "Your authenticated account could not be found. Please sign in again.",
         );
       }
+
+      /* -----------------------------------------------
+         VERIFY CURRENT PASSWORD
+      ------------------------------------------------ */
 
       const { error: signInError } =
         await supabase.auth.signInWithPassword({
@@ -323,9 +319,14 @@ export default function StudentSettingsPage() {
 
       if (updateError) {
         throw new Error(
-          updateError.message,
+          updateError.message ||
+            "Unable to update your password.",
         );
       }
+
+      /* -----------------------------------------------
+         CLEAR FORM
+      ------------------------------------------------ */
 
       setCurrentPassword("");
       setNewPassword("");
@@ -335,16 +336,17 @@ export default function StudentSettingsPage() {
 
       showMessage(
         "Your password has been changed successfully.",
+        "success",
       );
-    } catch (error) {
+    } catch (err) {
       console.error(
         "Password change error:",
-        error,
+        err,
       );
 
       showMessage(
-        error instanceof Error
-          ? error.message
+        err instanceof Error
+          ? err.message
           : "Unable to change your password.",
         "error",
       );
@@ -361,31 +363,33 @@ export default function StudentSettingsPage() {
     try {
       setSigningOut(true);
 
-      const { error } =
+      const { error: signOutError } =
         await supabase.auth.signOut();
 
-      if (error) {
-        throw new Error(error.message);
+      if (signOutError) {
+        throw new Error(
+          signOutError.message ||
+            "Unable to sign out.",
+        );
       }
 
       /*
-       * Force browser navigation.
-       * This ensures the protected student portal
-       * is completely left after logout.
+       * Force browser navigation so the protected
+       * student portal is completely left.
        */
 
       window.location.replace("/student-login");
-    } catch (error) {
+    } catch (err) {
       console.error(
         "Sign out error:",
-        error,
+        err,
       );
 
       setSigningOut(false);
 
       showMessage(
-        error instanceof Error
-          ? error.message
+        err instanceof Error
+          ? err.message
           : "Unable to sign out.",
         "error",
       );
@@ -403,6 +407,12 @@ export default function StudentSettingsPage() {
       return "Not available";
     }
 
+    const parsedDate = new Date(date);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      return "Not available";
+    }
+
     return new Intl.DateTimeFormat(
       "en-GB",
       {
@@ -410,7 +420,7 @@ export default function StudentSettingsPage() {
         month: "long",
         year: "numeric",
       },
-    ).format(new Date(date));
+    ).format(parsedDate);
   };
 
   /* =====================================================
@@ -419,24 +429,24 @@ export default function StudentSettingsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-full bg-slate-50 dark:bg-slate-950">
-        <section className="border-b border-slate-200 bg-white px-5 py-8 dark:border-slate-800 dark:bg-slate-900 sm:px-8">
+      <div className="min-h-full bg-slate-50">
+        <section className="border-b border-slate-200 bg-white px-5 py-8 sm:px-8">
           <div className="animate-pulse">
-            <div className="h-3 w-20 rounded bg-slate-200 dark:bg-slate-700" />
+            <div className="h-3 w-20 rounded bg-slate-200" />
 
-            <div className="mt-4 h-9 w-48 rounded bg-slate-200 dark:bg-slate-700" />
+            <div className="mt-4 h-9 w-48 rounded bg-slate-200" />
 
-            <div className="mt-3 h-4 w-full max-w-xl rounded bg-slate-100 dark:bg-slate-800" />
+            <div className="mt-3 h-4 w-full max-w-xl rounded bg-slate-100" />
           </div>
         </section>
 
         <main className="px-5 py-8 sm:px-8">
           <div className="mx-auto max-w-5xl space-y-6">
-            <div className="h-44 animate-pulse rounded-3xl bg-white dark:bg-slate-900" />
+            <div className="h-44 animate-pulse rounded-3xl bg-white" />
 
-            <div className="h-80 animate-pulse rounded-3xl bg-white dark:bg-slate-900" />
+            <div className="h-80 animate-pulse rounded-3xl bg-white" />
 
-            <div className="h-64 animate-pulse rounded-3xl bg-white dark:bg-slate-900" />
+            <div className="h-64 animate-pulse rounded-3xl bg-white" />
           </div>
         </main>
       </div>
@@ -444,16 +454,148 @@ export default function StudentSettingsPage() {
   }
 
   /* =====================================================
+     LOGIN REQUIRED
+  ====================================================== */
+
+  if (error === "LOGIN_REQUIRED") {
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center bg-slate-50 px-5">
+        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <div
+            className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl"
+            style={{
+              backgroundColor: `${SCHOOL_BLUE}08`,
+              color: SCHOOL_BLUE,
+            }}
+          >
+            <ShieldCheck size={25} />
+          </div>
+
+          <p
+            className="mt-5 text-[10px] font-black uppercase tracking-[0.2em]"
+            style={{
+              color: SCHOOL_GOLD,
+            }}
+          >
+            Settings
+          </p>
+
+          <h1
+            className="mt-2 text-xl font-black"
+            style={{
+              color: SCHOOL_BLUE_DARK,
+            }}
+          >
+            Login required
+          </h1>
+
+          <p className="mt-3 text-sm leading-6 text-slate-500">
+            Please sign in again to continue viewing your
+            account settings.
+          </p>
+
+          <Link
+            href="/student-login"
+            className="mt-6 inline-flex items-center justify-center rounded-full px-6 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:shadow-md"
+            style={{
+              backgroundColor: SCHOOL_BLUE,
+            }}
+          >
+            Sign in here
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+/* =====================================================
+   ERROR STATE
+====================================================== */
+
+if (error || !student) {
+  const isAuthError =
+    error?.toLowerCase().includes("auth session missing") ||
+    error?.toLowerCase().includes("not logged in") ||
+    error?.toLowerCase().includes("session missing");
+
+  return (
+    <div className="flex min-h-[70vh] items-center justify-center bg-slate-50 px-5">
+      <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+
+        {/* ICON */}
+
+        <div
+          className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl"
+          style={{
+            backgroundColor: `${SCHOOL_BLUE}08`,
+            color: SCHOOL_BLUE,
+          }}
+        >
+          <AlertCircle size={25} />
+        </div>
+
+        {/* LABEL */}
+
+        <p
+          className="mt-5 text-[10px] font-black uppercase tracking-[0.2em]"
+          style={{
+            color: SCHOOL_GOLD,
+          }}
+        >
+          {isAuthError ? "Login Required" : "Settings Error"}
+        </p>
+
+        {/* TITLE */}
+
+        <h1
+          className="mt-2 text-xl font-black"
+          style={{
+            color: SCHOOL_BLUE_DARK,
+          }}
+        >
+          {isAuthError
+            ? "Please sign in to continue"
+            : "Unable to load settings"}
+        </h1>
+
+        {/* MESSAGE */}
+
+        <p className="mt-3 text-sm leading-6 text-slate-500">
+          {isAuthError
+            ? "Please sign in again to continue viewing your account settings."
+            : error ??
+              "Your account settings could not be loaded."}
+        </p>
+
+        {/* SIGN IN */}
+
+        <div className="mt-6">
+          <Link
+            href="/student-login"
+            className="inline-flex items-center justify-center rounded-full px-6 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:shadow-md"
+            style={{
+              backgroundColor: SCHOOL_BLUE,
+            }}
+          >
+            Sign in here
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+  /* =====================================================
      PAGE
   ====================================================== */
 
   return (
-    <div className="min-h-full bg-slate-50 text-slate-700 transition-colors duration-200 dark:bg-slate-950 dark:text-slate-200">
+    <div className="min-h-full bg-slate-50 text-slate-700">
       {/* =================================================
           HEADER
       ================================================== */}
 
-      <section className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+      <section className="border-b border-slate-200 bg-white">
         <div className="px-5 py-7 sm:px-8 sm:py-9">
           <p
             className="text-[10px] font-black uppercase tracking-[0.22em]"
@@ -473,9 +615,9 @@ export default function StudentSettingsPage() {
             Settings
           </h1>
 
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-            Manage your student account, notifications,
-            security and preferences.
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+            Manage your student account, notifications and
+            security preferences.
           </p>
         </div>
       </section>
@@ -487,14 +629,16 @@ export default function StudentSettingsPage() {
       <main className="px-5 py-7 sm:px-8 sm:py-9">
         <div className="mx-auto max-w-5xl space-y-6">
 
-          {/* ALERT */}
+          {/* =================================================
+              ALERT
+          ================================================== */}
 
           {message && (
             <div
               className={`flex items-start gap-3 rounded-2xl border px-4 py-3.5 text-sm ${
                 messageType === "success"
-                  ? "border-emerald-100 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300"
-                  : "border-red-100 bg-red-50 text-red-600 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
+                  ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+                  : "border-red-100 bg-red-50 text-red-600"
               }`}
             >
               {messageType === "success" ? (
@@ -517,7 +661,7 @@ export default function StudentSettingsPage() {
               PROFILE
           ================================================== */}
 
-          <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_8px_30px_rgba(1,0,102,0.035)] dark:border-slate-800 dark:bg-slate-900">
+          <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_8px_30px_rgba(1,0,102,0.035)]">
             <div className="p-6 sm:p-7">
               <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
 
@@ -528,10 +672,13 @@ export default function StudentSettingsPage() {
                       backgroundColor: SCHOOL_BLUE,
                     }}
                   >
-                    {student?.profile_photo ? (
+                    {student.profile_photo ? (
                       <img
                         src={student.profile_photo}
-                        alt={student.full_name ?? "Student"}
+                        alt={
+                          student.full_name ??
+                          "Student"
+                        }
                         className="h-full w-full object-cover"
                       />
                     ) : (
@@ -545,27 +692,27 @@ export default function StudentSettingsPage() {
                     </p>
 
                     <h2
-                      className="mt-1 text-lg font-black dark:text-white"
+                      className="mt-1 text-lg font-black"
                       style={{
                         color: SCHOOL_BLUE_DARK,
                       }}
                     >
-                      {student?.full_name ||
+                      {student.full_name ||
                         "Student"}
                     </h2>
 
                     <p className="mt-1 text-xs text-slate-400">
-                      {student?.admission_number
+                      {student.admission_number
                         ? `Admission No. ${student.admission_number}`
                         : "Student account"}
                     </p>
                   </div>
                 </div>
 
-                <span className="inline-flex w-fit items-center gap-2 rounded-full bg-emerald-50 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300">
+                <span className="inline-flex w-fit items-center gap-2 rounded-full bg-emerald-50 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-emerald-600">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
 
-                  {student?.status ??
+                  {student.status ??
                     "Active"}
                 </span>
               </div>
@@ -573,18 +720,21 @@ export default function StudentSettingsPage() {
 
             {/* ACCOUNT INFORMATION */}
 
-            <div className="grid border-t border-slate-100 dark:border-slate-800 sm:grid-cols-2">
+            <div className="grid border-t border-slate-100 sm:grid-cols-2">
 
               <InfoItem
                 label="Email Address"
-                value={email || "Not available"}
+                value={
+                  email ||
+                  "Not available"
+                }
                 icon={<Mail size={17} />}
               />
 
               <InfoItem
                 label="Student ID"
                 value={
-                  student?.student_id ||
+                  student.student_id ||
                   "Not available"
                 }
                 icon={<UserRound size={17} />}
@@ -593,7 +743,7 @@ export default function StudentSettingsPage() {
               <InfoItem
                 label="Admission Number"
                 value={
-                  student?.admission_number ||
+                  student.admission_number ||
                   "Not available"
                 }
                 icon={<ShieldCheck size={17} />}
@@ -602,7 +752,7 @@ export default function StudentSettingsPage() {
               <InfoItem
                 label="Date of Birth"
                 value={formatDate(
-                  student?.date_of_birth ?? null,
+                  student.date_of_birth,
                 )}
                 icon={<UserRound size={17} />}
               />
@@ -610,7 +760,7 @@ export default function StudentSettingsPage() {
               <InfoItem
                 label="Phone"
                 value={
-                  student?.phone ||
+                  student.phone ||
                   "Not available"
                 }
                 icon={<Mail size={17} />}
@@ -619,7 +769,7 @@ export default function StudentSettingsPage() {
               <InfoItem
                 label="Guardian"
                 value={
-                  student?.guardian_name ||
+                  student.guardian_name ||
                   "Not available"
                 }
                 icon={<UserRound size={17} />}
@@ -632,7 +782,8 @@ export default function StudentSettingsPage() {
               NOTIFICATIONS
           ================================================== */}
 
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_8px_30px_rgba(1,0,102,0.035)] dark:border-slate-800 dark:bg-slate-900 sm:p-7">
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_8px_30px_rgba(1,0,102,0.035)] sm:p-7">
+
             <div className="flex items-start gap-4">
               <div
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
@@ -650,7 +801,7 @@ export default function StudentSettingsPage() {
                 </p>
 
                 <h2
-                  className="mt-1 text-base font-black dark:text-white"
+                  className="mt-1 text-base font-black"
                   style={{
                     color: SCHOOL_BLUE_DARK,
                   }}
@@ -664,7 +815,7 @@ export default function StudentSettingsPage() {
               </div>
             </div>
 
-            <div className="mt-6 divide-y divide-slate-100 dark:divide-slate-800">
+            <div className="mt-6 divide-y divide-slate-100">
 
               <SettingToggle
                 icon={<Bell size={17} />}
@@ -706,79 +857,11 @@ export default function StudentSettingsPage() {
           </section>
 
           {/* =================================================
-              APPEARANCE
-          ================================================== */}
-
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_8px_30px_rgba(1,0,102,0.035)] dark:border-slate-800 dark:bg-slate-900 sm:p-7">
-            <div className="flex items-start gap-4">
-              <div
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
-                style={{
-                  backgroundColor: `${SCHOOL_GOLD}15`,
-                  color: SCHOOL_GOLD,
-                }}
-              >
-                {appearance === "light" ? (
-                  <Sun size={19} />
-                ) : (
-                  <Moon size={19} />
-                )}
-              </div>
-
-              <div>
-                <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                  Interface
-                </p>
-
-                <h2
-                  className="mt-1 text-base font-black dark:text-white"
-                  style={{
-                    color: SCHOOL_BLUE_DARK,
-                  }}
-                >
-                  Appearance
-                </h2>
-
-                <p className="mt-1 text-xs leading-5 text-slate-400">
-                  Choose how the student portal looks.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
-
-              <AppearanceButton
-                icon={<Sun size={18} />}
-                title="Light"
-                description="Clean and bright"
-                active={
-                  appearance === "light"
-                }
-                onClick={() =>
-                  applyAppearance("light")
-                }
-              />
-
-              <AppearanceButton
-                icon={<Moon size={18} />}
-                title="Dark"
-                description="Easier on the eyes"
-                active={
-                  appearance === "dark"
-                }
-                onClick={() =>
-                  applyAppearance("dark")
-                }
-              />
-
-            </div>
-          </section>
-
-          {/* =================================================
               SECURITY
           ================================================== */}
 
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_8px_30px_rgba(1,0,102,0.035)] dark:border-slate-800 dark:bg-slate-900 sm:p-7">
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_8px_30px_rgba(1,0,102,0.035)] sm:p-7">
+
             <div className="flex items-start gap-4">
               <div
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
@@ -796,7 +879,7 @@ export default function StudentSettingsPage() {
                 </p>
 
                 <h2
-                  className="mt-1 text-base font-black dark:text-white"
+                  className="mt-1 text-base font-black"
                   style={{
                     color: SCHOOL_BLUE_DARK,
                   }}
@@ -812,20 +895,23 @@ export default function StudentSettingsPage() {
 
             <div className="mt-6 space-y-3">
 
+              {/* CHANGE PASSWORD */}
+
               <button
                 type="button"
                 onClick={() =>
                   setShowPasswordModal(true)
                 }
-                className="group flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-[#010066]/15 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
+                className="group flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-[#010066]/15 hover:bg-slate-50"
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-500 transition group-hover:bg-white dark:bg-slate-800 dark:text-slate-300">
+
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-500 transition group-hover:bg-white">
                     <KeyRound size={17} />
                   </div>
 
                   <div>
-                    <p className="text-xs font-black text-slate-700 dark:text-white">
+                    <p className="text-xs font-black text-slate-700">
                       Change password
                     </p>
 
@@ -833,6 +919,7 @@ export default function StudentSettingsPage() {
                       Update your account password securely.
                     </p>
                   </div>
+
                 </div>
 
                 <ChevronRight
@@ -841,14 +928,17 @@ export default function StudentSettingsPage() {
                 />
               </button>
 
-              <div className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800/50">
+              {/* SECURITY INFO */}
+
+              <div className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+
                 <Eye
                   size={17}
                   className="mt-0.5 shrink-0 text-slate-400"
                 />
 
                 <div>
-                  <p className="text-xs font-black text-slate-700 dark:text-white">
+                  <p className="text-xs font-black text-slate-700">
                     Account security
                   </p>
 
@@ -857,6 +947,7 @@ export default function StudentSettingsPage() {
                     authentication provided by the school portal.
                   </p>
                 </div>
+
               </div>
 
             </div>
@@ -866,16 +957,18 @@ export default function StudentSettingsPage() {
               SIGN OUT
           ================================================== */}
 
-          <section className="rounded-3xl border border-red-100 bg-white p-6 shadow-[0_8px_30px_rgba(1,0,102,0.025)] dark:border-red-950/50 dark:bg-slate-900 sm:p-7">
+          <section className="rounded-3xl border border-red-100 bg-white p-6 shadow-[0_8px_30px_rgba(1,0,102,0.025)] sm:p-7">
+
             <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
 
               <div className="flex items-start gap-4">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-500 dark:bg-red-950/40">
+
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-500">
                   <LogOut size={19} />
                 </div>
 
                 <div>
-                  <p className="text-xs font-black text-slate-700 dark:text-white">
+                  <p className="text-xs font-black text-slate-700">
                     Sign out
                   </p>
 
@@ -883,13 +976,14 @@ export default function StudentSettingsPage() {
                     Sign out of your student account on this device.
                   </p>
                 </div>
+
               </div>
 
               <button
                 type="button"
                 onClick={handleSignOut}
                 disabled={signingOut}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-5 py-3 text-xs font-black text-red-500 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900/50 dark:bg-red-950/40"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-5 py-3 text-xs font-black text-red-500 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {signingOut ? (
                   <>
@@ -907,7 +1001,9 @@ export default function StudentSettingsPage() {
             </div>
           </section>
 
-          {/* FOOTER */}
+          {/* =================================================
+              FOOTER
+          ================================================== */}
 
           <div className="pb-5 text-center">
             <Link
@@ -920,6 +1016,7 @@ export default function StudentSettingsPage() {
               Back to Student Dashboard
             </Link>
           </div>
+
         </div>
       </main>
 
@@ -930,11 +1027,12 @@ export default function StudentSettingsPage() {
       {showPasswordModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-5 backdrop-blur-sm">
 
-          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 sm:p-7">
+          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl sm:p-7">
 
             <div className="flex items-start justify-between gap-4">
 
               <div>
+
                 <div
                   className="flex h-11 w-11 items-center justify-center rounded-xl"
                   style={{
@@ -946,7 +1044,7 @@ export default function StudentSettingsPage() {
                 </div>
 
                 <h2
-                  className="mt-4 text-lg font-black dark:text-white"
+                  className="mt-4 text-lg font-black"
                   style={{
                     color: SCHOOL_BLUE_DARK,
                   }}
@@ -957,6 +1055,7 @@ export default function StudentSettingsPage() {
                 <p className="mt-1 text-xs leading-5 text-slate-400">
                   Enter your current password and choose a new one.
                 </p>
+
               </div>
 
               <button
@@ -964,44 +1063,58 @@ export default function StudentSettingsPage() {
                 onClick={() =>
                   setShowPasswordModal(false)
                 }
-                className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                disabled={changingPassword}
+                className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <X size={17} />
               </button>
 
             </div>
 
+            {/* PASSWORD FIELDS */}
+
             <div className="mt-6 space-y-4">
 
               <PasswordField
                 label="Current password"
                 value={currentPassword}
-                onChange={setCurrentPassword}
+                onChange={
+                  setCurrentPassword
+                }
               />
 
               <PasswordField
                 label="New password"
                 value={newPassword}
-                onChange={setNewPassword}
+                onChange={
+                  setNewPassword
+                }
               />
 
               <PasswordField
                 label="Confirm new password"
                 value={confirmPassword}
-                onChange={setConfirmPassword}
+                onChange={
+                  setConfirmPassword
+                }
               />
 
             </div>
+
+            {/* ACTIONS */}
 
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
 
               <button
                 type="button"
-                onClick={() =>
-                  setShowPasswordModal(false)
-                }
+                onClick={() => {
+                  setShowPasswordModal(false);
+                  setCurrentPassword("");
+                  setNewPassword("");
+                  setConfirmPassword("");
+                }}
                 disabled={changingPassword}
-                className="rounded-xl border border-slate-200 px-5 py-3 text-xs font-black text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                className="rounded-xl border border-slate-200 px-5 py-3 text-xs font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -1029,6 +1142,7 @@ export default function StudentSettingsPage() {
               </button>
 
             </div>
+
           </div>
         </div>
       )}
@@ -1050,8 +1164,8 @@ function InfoItem({
   icon: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start gap-3 border-b border-slate-100 p-5 last:border-b-0 dark:border-slate-800">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-400 dark:bg-slate-800">
+    <div className="flex items-start gap-3 border-b border-slate-100 p-5">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-400">
         {icon}
       </div>
 
@@ -1060,7 +1174,7 @@ function InfoItem({
           {label}
         </p>
 
-        <p className="mt-1 break-words text-xs font-bold text-slate-700 dark:text-slate-200">
+        <p className="mt-1 break-words text-xs font-bold text-slate-700">
           {value}
         </p>
       </div>
@@ -1083,7 +1197,7 @@ function PasswordField({
 }) {
   return (
     <label className="block">
-      <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+      <span className="text-xs font-bold text-slate-600">
         {label}
       </span>
 
@@ -1094,7 +1208,7 @@ function PasswordField({
           onChange(event.target.value)
         }
         autoComplete="current-password"
-        className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#010066]/25 focus:bg-white focus:ring-4 focus:ring-[#010066]/5 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:bg-slate-800"
+        className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#010066]/25 focus:bg-white focus:ring-4 focus:ring-[#010066]/5"
         placeholder="••••••••"
       />
     </label>
@@ -1120,13 +1234,21 @@ function SettingToggle({
 }) {
   return (
     <div className="flex items-center justify-between gap-5 py-5 first:pt-0 last:pb-0">
+
       <div className="flex min-w-0 items-start gap-3">
-        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-400 dark:bg-slate-800">
+
+        <div
+          className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+          style={{
+            backgroundColor: `${SCHOOL_BLUE}06`,
+            color: SCHOOL_BLUE,
+          }}
+        >
           {icon}
         </div>
 
         <div className="min-w-0">
-          <p className="text-xs font-black text-slate-700 dark:text-slate-200">
+          <p className="text-xs font-black text-slate-700">
             {title}
           </p>
 
@@ -1134,6 +1256,7 @@ function SettingToggle({
             {description}
           </p>
         </div>
+
       </div>
 
       <button
@@ -1156,77 +1279,7 @@ function SettingToggle({
           }`}
         />
       </button>
+
     </div>
-  );
-}
-
-/* =====================================================
-   APPEARANCE BUTTON
-====================================================== */
-
-function AppearanceButton({
-  icon,
-  title,
-  description,
-  active,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center justify-between rounded-2xl border p-4 text-left transition"
-      style={{
-        borderColor: active
-          ? `${SCHOOL_BLUE}30`
-          : "#E2E8F0",
-        backgroundColor: active
-          ? `${SCHOOL_BLUE}06`
-          : "#FFFFFF",
-      }}
-    >
-      <div className="flex items-center gap-3">
-        <div
-          className="flex h-10 w-10 items-center justify-center rounded-xl"
-          style={{
-            backgroundColor: active
-              ? `${SCHOOL_BLUE}10`
-              : "#F8FAFC",
-            color: active
-              ? SCHOOL_BLUE
-              : "#94A3B8",
-          }}
-        >
-          {icon}
-        </div>
-
-        <div>
-          <p className="text-xs font-black text-slate-700">
-            {title}
-          </p>
-
-          <p className="mt-0.5 text-[10px] text-slate-400">
-            {description}
-          </p>
-        </div>
-      </div>
-
-      {active && (
-        <div
-          className="flex h-6 w-6 items-center justify-center rounded-full text-white"
-          style={{
-            backgroundColor: SCHOOL_BLUE,
-          }}
-        >
-          <Check size={13} />
-        </div>
-      )}
-    </button>
   );
 }

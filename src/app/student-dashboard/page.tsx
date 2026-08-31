@@ -256,7 +256,7 @@ export default function StudentDashboardPage() {
           authMessage.includes("session")
         ) {
           throw new Error(
-            "Your login session has expired. Please sign in again to continue.",
+            "Your account is safe. Sign in again to continue accessing your student dashboard.",
           );
         }
 
@@ -267,7 +267,7 @@ export default function StudentDashboardPage() {
 
       if (!user) {
         throw new Error(
-          "Your login session has expired. Please sign in again to continue.",
+          "Your account is safe. Sign in again to continue accessing your student dashboard.",
         );
       }
 
@@ -1125,7 +1125,7 @@ export default function StudentDashboardPage() {
             }}
           >
             {isSessionError
-              ? "Session Required"
+              ? "Login Required"
               : "Dashboard"}
           </p>
 
@@ -1150,12 +1150,12 @@ export default function StudentDashboardPage() {
 
           {/* EXTRA SESSION MESSAGE */}
 
-          {isSessionError && (
+          {/* {isSessionError && (
             <p className="mt-2 text-xs leading-5 text-slate-400">
               Your account is safe. Sign in again to continue
               accessing your student dashboard.
             </p>
-          )}
+          )} */}
 
           {/* ACTIONS */}
 
