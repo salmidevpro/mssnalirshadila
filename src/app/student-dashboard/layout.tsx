@@ -202,14 +202,6 @@ export default function StudentDashboardLayout({
   }, [router, supabase]);
 
   /* =====================================================
-     CLOSE MOBILE SIDEBAR WHEN ROUTE CHANGES
-  ====================================================== */
-
-  useEffect(() => {
-    setSidebarOpen(false);
-  }, [pathname]);
-
-  /* =====================================================
      LOGOUT
   ====================================================== */
 

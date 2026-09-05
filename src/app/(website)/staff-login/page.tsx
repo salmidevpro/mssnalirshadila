@@ -2,16 +2,19 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
+  AlertCircle,
   ArrowLeft,
   ArrowRight,
   Eye,
   EyeOff,
   LockKeyhole,
+  Loader2,
   UserRound,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import {
   SCHOOL_BLUE,
@@ -20,8 +23,214 @@ import {
   siteConfig,
 } from "@/config/site";
 
+import { createClient } from "@/lib/supabase/client";
+
+const supabase = createClient();
+
 export default function StaffPortalPage() {
+  const router = useRouter();
+
   const [showPassword, setShowPassword] = useState(false);
+
+  const [staffId, setStaffId] = useState("");
+  const [password, setPassword] = useState("");
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
+
+  const [error, setError] = useState("");
+
+  /*
+   * Check whether the staff member is already signed in.
+   */
+  useEffect(() => {
+    const checkExistingSession = async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (user) {
+          const { data: staff, error: staffError } = await supabase
+            .from("staff")
+            .select("id, user_id, staff_id, department, position, status")
+            .eq("user_id", user.id)
+            .maybeSingle();
+
+          if (!staffError && staff && staff.status === "active") {
+            router.push("/staff-dashboard");
+            return;
+          }
+
+          await supabase.auth.signOut();
+        }
+      } catch {
+        // Ignore session-check errors.
+      } finally {
+        setIsCheckingSession(false);
+      }
+    };
+
+    checkExistingSession();
+  }, []);
+
+  /*
+   * Resolve either:
+   *
+   * Email
+   * OR
+   * Staff ID
+   *
+   * into an email address that Supabase Auth can use.
+   */
+  const resolveLoginEmail = async (identifier: string) => {
+    const value = identifier.trim();
+
+    if (value.includes("@")) {
+      return value;
+    }
+
+    const { data, error: rpcError } = await supabase.rpc(
+      "get_staff_login_email",
+      {
+        input_staff_id: value,
+      },
+    );
+
+    if (rpcError) {
+      console.error("Staff lookup error:", rpcError);
+      throw new Error("We could not verify your staff ID.");
+    }
+
+    if (!data) {
+      throw new Error(
+        "No active staff account was found with that Staff ID.",
+      );
+    }
+
+    return data;
+  };
+
+  /*
+   * Handle login.
+   */
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    setError("");
+
+    const identifier = staffId.trim();
+
+    if (!identifier) {
+      setError("Please enter your Staff ID or email address.");
+      return;
+    }
+
+    if (!password) {
+      setError("Please enter your password.");
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      /*
+       * Resolve Staff ID → Email
+       */
+      const email = await resolveLoginEmail(identifier);
+
+      /*
+       * Authenticate through Supabase Auth
+       */
+      const { data, error: signInError } =
+        await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+      if (signInError || !data.user) {
+        throw new Error(
+          "The email/Staff ID or password you entered is incorrect.",
+        );
+      }
+
+      /*
+       * Verify that this Auth account actually belongs
+       * to a staff member.
+       */
+      const { data: staff, error: staffError } = await supabase
+        .from("staff")
+        .select(
+          "id, user_id, staff_id, department, position, status",
+        )
+        .eq("user_id", data.user.id)
+        .maybeSingle();
+
+      if (staffError || !staff) {
+        await supabase.auth.signOut();
+
+        throw new Error(
+          "This account is not registered as a staff account.",
+        );
+      }
+
+      /*
+       * Check staff account status.
+       */
+      if (staff.status !== "active") {
+        await supabase.auth.signOut();
+
+        if (staff.status === "suspended") {
+          throw new Error(
+            "Your staff account has been suspended. Please contact the school administration.",
+          );
+        }
+
+        throw new Error(
+          "Your staff account is currently inactive. Please contact the school administration.",
+        );
+      }
+
+      /*
+       * Successful login.
+       */
+      router.push("/staff-dashboard");
+    } catch (loginError) {
+      setError(
+        loginError instanceof Error
+          ? loginError.message
+          : "Unable to sign in. Please try again.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /*
+   * Avoid flashing the login form while checking
+   * an existing authentication session.
+   */
+  if (isCheckingSession) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-3">
+          <div
+            className="flex h-12 w-12 items-center justify-center rounded-2xl"
+            style={{
+              backgroundColor: `${SCHOOL_BLUE}08`,
+              color: SCHOOL_BLUE,
+            }}
+          >
+            <Loader2 className="animate-spin" size={21} />
+          </div>
+
+          <p className="text-xs font-semibold text-slate-400">
+            Checking your session...
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -76,11 +285,7 @@ export default function StaffPortalPage() {
               href="/"
               className="group inline-flex flex-col items-center"
             >
-              {/* School Logo */}
-
-              <div  
-                className="relative h-20 w-20 overflow-hidden rounded-2xl bg-white shadow-[0_10px_30px_rgba(1,0,102,0.10)] ring-1 ring-slate-200 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-[0_16px_40px_rgba(1,0,102,0.16)]"
-              >
+              <div className="relative h-20 w-20 overflow-hidden rounded-2xl bg-white shadow-[0_10px_30px_rgba(1,0,102,0.10)] ring-1 ring-slate-200 transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-[0_16px_40px_rgba(1,0,102,0.16)]">
                 <Image
                   src="/images/al-ishad-logo.jpeg"
                   alt={`${siteConfig.name} logo`}
@@ -90,8 +295,6 @@ export default function StaffPortalPage() {
                   className="object-contain p-2"
                 />
               </div>
-
-              {/* School Name */}
 
               <p
                 className="mt-5 text-[10px] font-bold uppercase tracking-[0.22em]"
@@ -165,10 +368,40 @@ export default function StaffPortalPage() {
             </div>
 
             {/* =================================================
+                ERROR MESSAGE
+            ================================================== */}
+
+            {error && (
+              <motion.div
+                initial={{
+                  opacity: 0,
+                  y: -8,
+                }}
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                }}
+                className="mt-6 flex items-start gap-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3"
+              >
+                <AlertCircle
+                  size={17}
+                  className="mt-0.5 shrink-0 text-red-500"
+                />
+
+                <p className="text-xs font-medium leading-5 text-red-600">
+                  {error}
+                </p>
+              </motion.div>
+            )}
+
+            {/* =================================================
                 LOGIN FORM
             ================================================== */}
 
-            <form className="mt-8 space-y-5">
+            <form
+              onSubmit={handleSubmit}
+              className="mt-8 space-y-5"
+            >
               {/* Staff ID / Email */}
 
               <div>
@@ -189,9 +422,14 @@ export default function StaffPortalPage() {
                     id="staff-id"
                     name="staffId"
                     type="text"
+                    value={staffId}
+                    onChange={(event) =>
+                      setStaffId(event.target.value)
+                    }
                     autoComplete="username"
                     placeholder="Enter your staff ID or email"
-                    className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm text-slate-800 outline-none transition-all duration-300 placeholder:text-slate-400 hover:border-slate-300 focus:border-[#010066]/30 focus:bg-white focus:ring-4 focus:ring-[#010066]/5"
+                    disabled={isLoading}
+                    className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm text-slate-800 outline-none transition-all duration-300 placeholder:text-slate-400 hover:border-slate-300 focus:border-[#010066]/30 focus:bg-white focus:ring-4 focus:ring-[#010066]/5 disabled:cursor-not-allowed disabled:opacity-60"
                   />
                 </div>
               </div>
@@ -216,20 +454,28 @@ export default function StaffPortalPage() {
                     id="password"
                     name="password"
                     type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(event) =>
+                      setPassword(event.target.value)
+                    }
                     autoComplete="current-password"
                     placeholder="Enter your password"
-                    className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-11 pr-12 text-sm text-slate-800 outline-none transition-all duration-300 placeholder:text-slate-400 hover:border-slate-300 focus:border-[#010066]/30 focus:bg-white focus:ring-4 focus:ring-[#010066]/5"
+                    disabled={isLoading}
+                    className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-11 pr-12 text-sm text-slate-800 outline-none transition-all duration-300 placeholder:text-slate-400 hover:border-slate-300 focus:border-[#010066]/30 focus:bg-white focus:ring-4 focus:ring-[#010066]/5 disabled:cursor-not-allowed disabled:opacity-60"
                   />
-
-                  {/* Show / Hide Password */}
 
                   <button
                     type="button"
                     aria-label={
-                      showPassword ? "Hide password" : "Show password"
+                      showPassword
+                        ? "Hide password"
+                        : "Show password"
                     }
-                    onClick={() => setShowPassword((value) => !value)}
-                    className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition-all duration-200 hover:bg-slate-100 hover:text-[#010066]"
+                    onClick={() =>
+                      setShowPassword((value) => !value)
+                    }
+                    disabled={isLoading}
+                    className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition-all duration-200 hover:bg-slate-100 hover:text-[#010066] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {showPassword ? (
                       <EyeOff size={17} />
@@ -245,7 +491,8 @@ export default function StaffPortalPage() {
               <div className="flex justify-end">
                 <button
                   type="button"
-                  className="text-xs font-semibold transition-colors duration-200 hover:underline"
+                  disabled={isLoading}
+                  className="text-xs font-semibold transition-colors duration-200 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
                   style={{
                     color: SCHOOL_BLUE,
                   }}
@@ -260,37 +507,44 @@ export default function StaffPortalPage() {
 
               <button
                 type="submit"
-                className="group relative flex h-12 w-full items-center justify-center gap-2 overflow-hidden rounded-xl text-sm font-bold transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_14px_35px_rgba(1,0,102,0.22)]"
+                disabled={isLoading}
+                className="group relative flex h-12 w-full items-center justify-center gap-2 overflow-hidden rounded-xl text-sm font-bold transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_14px_35px_rgba(1,0,102,0.22)] disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:translate-y-0 disabled:hover:shadow-none"
                 style={{
                   backgroundColor: SCHOOL_BLUE,
                   color: "#ffffff",
                 }}
               >
-                {/* Hover background */}
-
                 <span
                   aria-hidden="true"
                   className="absolute inset-0 origin-left scale-x-0 bg-[#00004D] transition-transform duration-300 group-hover:scale-x-100"
                 />
 
-                {/* Button text */}
+                <span className="relative z-10 flex items-center gap-2 whitespace-nowrap">
+                  {isLoading ? (
+                    <>
+                      <Loader2
+                        size={16}
+                        className="animate-spin"
+                      />
+                      Signing in...
+                    </>
+                  ) : (
+                    <>
+                      Sign In
 
-                <span className="relative z-10 whitespace-nowrap">
-                  Sign In
-                </span>
-
-                {/* Arrow */}
-
-                <span
-                  className="relative z-10 flex h-6 w-6 items-center justify-center rounded-full"
-                  style={{
-                    backgroundColor: `${SCHOOL_GOLD}25`,
-                  }}
-                >
-                  <ArrowRight
-                    size={14}
-                    className="transition-transform duration-300 group-hover:translate-x-1"
-                  />
+                      <span
+                        className="flex h-6 w-6 items-center justify-center rounded-full"
+                        style={{
+                          backgroundColor: `${SCHOOL_GOLD}25`,
+                        }}
+                      >
+                        <ArrowRight
+                          size={14}
+                          className="transition-transform duration-300 group-hover:translate-x-1"
+                        />
+                      </span>
+                    </>
+                  )}
                 </span>
               </button>
             </form>
