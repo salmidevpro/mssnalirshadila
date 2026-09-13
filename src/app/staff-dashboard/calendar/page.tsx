@@ -10,21 +10,19 @@ import {
   BookOpen,
   CalendarDays,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   ClipboardCheck,
+  Clock3,
   FileText,
   GraduationCap,
   LayoutDashboard,
   LogOut,
   Menu,
   RefreshCw,
-  Search,
+  UserRound,
   Users,
   X,
-  Clock3,
-  UserRound,
-  Layers3,
-  Plus,
   type LucideIcon,
 } from "lucide-react";
 
@@ -48,24 +46,6 @@ type Term = {
   session_id: string;
   start_date: string | null;
   end_date: string | null;
-};
-
-type Course = {
-  id: string;
-  code: string;
-  name: string;
-  description: string | null;
-  units: number;
-  is_active: boolean;
-  class_id: string | null;
-};
-
-type CourseResult = {
-  course: Course;
-  studentCount: number;
-  resultCount: number;
-  publishedCount: number;
-  pendingCount: number;
 };
 
 type Staff = {
@@ -133,20 +113,14 @@ const navigation: {
   },
 ];
 
-export default function StaffResultsPage() {
+export default function StaffAcademicCalendarPage() {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
   const pathname = usePathname();
 
   const [session, setSession] = useState<Session | null>(null);
   const [term, setTerm] = useState<Term | null>(null);
-  const [staff, setStaff] = useState<Staff | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-
-  const [courses, setCourses] = useState<CourseResult[]>([]);
-
-  const [search, setSearch] = useState("");
-  const [showInactive, setShowInactive] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -154,13 +128,15 @@ export default function StaffResultsPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+
   /*
   |--------------------------------------------------------------------------
-  | LOAD RESULTS
+  | LOAD ACADEMIC PERIOD
   |--------------------------------------------------------------------------
   */
 
-  const loadResults = useCallback(async () => {
+  const loadCalendar = useCallback(async () => {
     setLoading(true);
     setError("");
     setUnauthenticated(false);
@@ -210,8 +186,6 @@ export default function StaffResultsPage() {
           "Your staff account could not be found or is currently inactive.",
         );
       }
-
-      setStaff(staffRecord);
 
       // --------------------------------------------------
       // PROFILE
@@ -279,136 +253,21 @@ export default function StaffResultsPage() {
 
       setTerm(currentTerm);
 
-      // --------------------------------------------------
-      // TEACHER'S ASSIGNED COURSES
-      // --------------------------------------------------
+      // Start calendar at the current academic term's month
+      if (currentTerm.start_date) {
+        const startDate = new Date(`${currentTerm.start_date}T00:00:00`);
 
-      const { data: assignments, error: assignmentError } = await supabase
-        .from("course_teachers")
-        .select(
-          `
-          id,
-          course_id,
-          teacher_id,
-          session_id,
-          term_id
-        `,
-        )
-        .eq("teacher_id", staffRecord.id)
-        .eq("session_id", currentSession.id)
-        .eq("term_id", currentTerm.id);
-
-      if (assignmentError) {
-        throw new Error("Unable to load your assigned courses.");
+        if (!Number.isNaN(startDate.getTime())) {
+          setCurrentMonth(startDate);
+        }
       }
-
-      if (!assignments || assignments.length === 0) {
-        setCourses([]);
-        setLoading(false);
-        return;
-      }
-
-      const courseIds = [
-        ...new Set(assignments.map((assignment) => assignment.course_id)),
-      ];
-
-      // --------------------------------------------------
-      // COURSES
-      // --------------------------------------------------
-
-      const { data: courseRecords, error: coursesError } = await supabase
-        .from("courses")
-        .select(
-          `
-          id,
-          code,
-          name,
-          description,
-          units,
-          is_active,
-          class_id
-        `,
-        )
-        .in("id", courseIds)
-        .order("name", { ascending: true });
-
-      if (coursesError) {
-        throw new Error("Unable to load your courses.");
-      }
-
-      if (!courseRecords || courseRecords.length === 0) {
-        setCourses([]);
-        setLoading(false);
-        return;
-      }
-
-      // --------------------------------------------------
-      // LOAD RESULT STATISTICS FOR EACH COURSE
-      // --------------------------------------------------
-
-      const courseStatistics = await Promise.all(
-        courseRecords.map(async (course) => {
-          let studentCount = 0;
-
-          // Students registered for this course
-          const { count: registrationCount, error: registrationError } =
-            await supabase
-              .from("course_registrations")
-              .select("id", { count: "exact", head: true })
-              .eq("course_id", course.id)
-              .eq("session_id", currentSession.id)
-              .eq("term_id", currentTerm.id);
-
-          if (registrationError) {
-            console.warn(
-              `Could not load student count for ${course.name}`,
-              registrationError,
-            );
-          } else {
-            studentCount = registrationCount ?? 0;
-          }
-
-          // Results entered for this course
-          const { data: resultRecords, error: resultsError } = await supabase
-            .from("results")
-            .select("id, published")
-            .eq("course_id", course.id)
-            .eq("session_id", currentSession.id)
-            .eq("term_id", currentTerm.id);
-
-          if (resultsError) {
-            console.warn(
-              `Could not load results for ${course.name}`,
-              resultsError,
-            );
-          }
-
-          const resultCount = resultRecords?.length ?? 0;
-
-          const publishedCount =
-            resultRecords?.filter((result) => result.published === true)
-              .length ?? 0;
-
-          const pendingCount = Math.max(studentCount - resultCount, 0);
-
-          return {
-            course,
-            studentCount,
-            resultCount,
-            publishedCount,
-            pendingCount,
-          };
-        }),
-      );
-
-      setCourses(courseStatistics);
     } catch (err) {
       console.error(err);
 
       setError(
         err instanceof Error
           ? err.message
-          : "Something went wrong while loading results.",
+          : "Something went wrong while loading the academic calendar.",
       );
     } finally {
       setLoading(false);
@@ -417,14 +276,14 @@ export default function StaffResultsPage() {
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      void loadResults();
+      void loadCalendar();
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
-  }, [loadResults]);
+  }, [loadCalendar]);
 
   // --------------------------------------------------
-  // CLOSE MOBILE MENU ON ROUTE CHANGE
+  // ROUTE CHANGE
   // --------------------------------------------------
 
   useEffect(() => {
@@ -447,14 +306,14 @@ export default function StaffResultsPage() {
     try {
       await supabase.auth.signOut();
       router.replace("/staff-login");
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error(err);
       setLoggingOut(false);
     }
   };
 
   // --------------------------------------------------
-  // STAFF DISPLAY
+  // STAFF INFO
   // --------------------------------------------------
 
   const staffName = profile
@@ -466,59 +325,43 @@ export default function StaffResultsPage() {
     : "ST";
 
   // --------------------------------------------------
-  // FILTER
+  // CALENDAR
   // --------------------------------------------------
 
-  const filteredCourses = useMemo(() => {
-    const query = search.trim().toLowerCase();
+  const calendarDays = useMemo(() => {
+    return buildCalendarDays(currentMonth);
+  }, [currentMonth]);
 
-    return courses.filter((item) => {
-      const course = item.course;
+  const monthLabel = currentMonth.toLocaleDateString("en-GB", {
+    month: "long",
+    year: "numeric",
+  });
 
-      const matchesSearch =
-        !query ||
-        course.name.toLowerCase().includes(query) ||
-        course.code.toLowerCase().includes(query);
-
-      const matchesStatus = showInactive || course.is_active;
-
-      return matchesSearch && matchesStatus;
-    });
-  }, [courses, search, showInactive]);
-
-  // --------------------------------------------------
-  // OVERALL STATS
-  // --------------------------------------------------
-
-  const stats = useMemo(() => {
-    const totalStudents = courses.reduce(
-      (sum, item) => sum + item.studentCount,
-      0,
+  const goToPreviousMonth = () => {
+    setCurrentMonth(
+      (previous) =>
+        new Date(
+          previous.getFullYear(),
+          previous.getMonth() - 1,
+          1,
+        ),
     );
+  };
 
-    const totalResults = courses.reduce(
-      (sum, item) => sum + item.resultCount,
-      0,
+  const goToNextMonth = () => {
+    setCurrentMonth(
+      (previous) =>
+        new Date(
+          previous.getFullYear(),
+          previous.getMonth() + 1,
+          1,
+        ),
     );
+  };
 
-    const totalPublished = courses.reduce(
-      (sum, item) => sum + item.publishedCount,
-      0,
-    );
-
-    const totalPending = courses.reduce(
-      (sum, item) => sum + item.pendingCount,
-      0,
-    );
-
-    return {
-      courses: courses.length,
-      totalStudents,
-      totalResults,
-      totalPublished,
-      totalPending,
-    };
-  }, [courses]);
+  const goToToday = () => {
+    setCurrentMonth(new Date());
+  };
 
   // --------------------------------------------------
   // LOADING
@@ -535,7 +378,7 @@ export default function StaffResultsPage() {
           loggingOut={loggingOut}
         />
 
-        <div className="lg:pl-[270px]">
+        <div className="lg:pl-67.5">
           <StaffTopbar
             staffName={staffName}
             initials={staffInitials}
@@ -547,31 +390,13 @@ export default function StaffResultsPage() {
             <div className="mx-auto max-w-7xl animate-pulse space-y-6">
               <div>
                 <div className="h-4 w-24 rounded bg-slate-200" />
-                <div className="mt-3 h-9 w-64 rounded-xl bg-slate-200" />
+                <div className="mt-3 h-9 w-72 rounded-xl bg-slate-200" />
                 <div className="mt-2 h-4 w-96 max-w-full rounded bg-slate-200" />
               </div>
 
-              <div className="h-24 rounded-2xl bg-white shadow-sm" />
+              <div className="h-28 rounded-2xl bg-white shadow-sm" />
 
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {[1, 2, 3, 4].map((item) => (
-                  <div
-                    key={item}
-                    className="h-32 rounded-2xl bg-white shadow-sm"
-                  />
-                ))}
-              </div>
-
-              <div className="h-24 rounded-2xl bg-white shadow-sm" />
-
-              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                {[1, 2, 3].map((item) => (
-                  <div
-                    key={item}
-                    className="h-72 rounded-3xl bg-white shadow-sm"
-                  />
-                ))}
-              </div>
+              <div className="h-[620px] rounded-3xl bg-white shadow-sm" />
             </div>
           </main>
         </div>
@@ -596,12 +421,12 @@ export default function StaffResultsPage() {
           </h1>
 
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            Please sign in to access your teaching results.
+            Please sign in to access the academic calendar.
           </p>
 
           <Link
             href="/staff-login"
-            className="mt-6 inline-flex items-center justify-center rounded-xl px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90"
+            className="mt-6 inline-flex rounded-xl px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90"
             style={{ backgroundColor: SCHOOL_BLUE }}
           >
             Sign in here
@@ -642,7 +467,7 @@ export default function StaffResultsPage() {
                 </div>
 
                 <h1 className="text-xl font-bold text-slate-900">
-                  Unable to load results
+                  Unable to load academic calendar
                 </h1>
 
                 <p className="mt-2 text-sm leading-6 text-slate-500">
@@ -650,7 +475,7 @@ export default function StaffResultsPage() {
                 </p>
 
                 <button
-                  onClick={loadResults}
+                  onClick={loadCalendar}
                   className="mt-6 inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90"
                   style={{ backgroundColor: SCHOOL_BLUE }}
                 >
@@ -706,7 +531,7 @@ export default function StaffResultsPage() {
                   <ChevronRight size={14} />
 
                   <span className="font-medium text-slate-900">
-                    Results
+                    Academic Calendar
                   </span>
                 </div>
 
@@ -717,36 +542,34 @@ export default function StaffResultsPage() {
                       background: `linear-gradient(135deg, ${SCHOOL_BLUE}, ${SCHOOL_BLUE_DARK})`,
                     }}
                   >
-                    <FileText size={21} />
+                    <CalendarDays size={21} />
                   </div>
 
                   <div>
                     <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
-                      Results
+                      Academic Calendar
                     </h1>
 
                     <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
-                      Enter, review and manage academic results for your
-                      assigned courses.
+                      Keep track of important academic dates, terms and school
+                      activities.
                     </p>
                   </div>
                 </div>
               </div>
 
-              <Link
-                href="/staff-dashboard/results/enter"
-                className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                style={{
-                  backgroundColor: SCHOOL_BLUE,
-                }}
+              <button
+                type="button"
+                onClick={goToToday}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
               >
-                <Plus size={18} />
-                Enter Results
-              </Link>
+                <CalendarDays size={17} />
+                Today
+              </button>
             </div>
 
             {/* ============================================
-                SESSION / TERM
+                CURRENT ACADEMIC PERIOD
             ============================================ */}
 
             <div className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -758,7 +581,7 @@ export default function StaffResultsPage() {
               />
 
               <div className="p-4 sm:p-5">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex items-start gap-3">
                     <div
                       className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
@@ -767,158 +590,261 @@ export default function StaffResultsPage() {
                         color: SCHOOL_BLUE,
                       }}
                     >
-                      <CalendarDays size={21} />
+                      <GraduationCap size={21} />
                     </div>
 
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                        Academic Period
+                        Current Academic Session
                       </p>
 
                       <p className="mt-1 font-semibold text-slate-900">
                         {session?.name}
                       </p>
 
-                      <p className="mt-0.5 text-sm capitalize text-slate-500">
+                      <p className="mt-0.5 text-sm text-slate-500">
                         {term?.name} Term
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                    Current Period
+                  <div className="grid grid-cols-2 gap-3 sm:min-w-[300px]">
+                    <PeriodDate
+                      label="Session starts"
+                      date={session?.start_date}
+                    />
+
+                    <PeriodDate
+                      label="Session ends"
+                      date={session?.end_date}
+                    />
                   </div>
                 </div>
               </div>
             </div>
 
             {/* ============================================
-                STATS
+                CALENDAR
             ============================================ */}
 
-            <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <StatCard
-                label="Assigned Courses"
-                value={stats.courses}
-                icon={<Layers3 size={21} />}
-                accent={SCHOOL_BLUE}
-              />
+            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+              {/* Calendar header */}
 
-              <StatCard
-                label="Students"
-                value={stats.totalStudents}
-                icon={<Users size={21} />}
-                accent="#0f766e"
-              />
+              <div className="border-b border-slate-100 p-4 sm:p-5">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Monthly View
+                    </p>
 
-              <StatCard
-                label="Results Entered"
-                value={stats.totalResults}
-                icon={<CheckCircle2 size={21} />}
-                accent="#2563eb"
-              />
+                    <h2 className="mt-1 text-xl font-bold text-slate-950">
+                      {monthLabel}
+                    </h2>
+                  </div>
 
-              <StatCard
-                label="Pending"
-                value={stats.totalPending}
-                icon={<Clock3 size={21} />}
-                accent="#d97706"
-              />
-            </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={goToPreviousMonth}
+                      className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-600 transition hover:bg-slate-50"
+                      aria-label="Previous month"
+                    >
+                      <ChevronLeft size={18} />
+                    </button>
 
-            {/* ============================================
-                TOOLBAR
-            ============================================ */}
+                    <button
+                      type="button"
+                      onClick={goToToday}
+                      className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      Today
+                    </button>
 
-            <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="relative w-full lg:max-w-md">
-                  <Search
-                    className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-                    size={18}
-                  />
-
-                  <input
-                    type="text"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search course or course code..."
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
-                  />
+                    <button
+                      type="button"
+                      onClick={goToNextMonth}
+                      className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-600 transition hover:bg-slate-50"
+                      aria-label="Next month"
+                    >
+                      <ChevronRight size={18} />
+                    </button>
+                  </div>
                 </div>
+              </div>
 
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <span className="text-xs font-medium text-slate-400">
-                    {filteredCourses.length}{" "}
-                    {filteredCourses.length === 1 ? "course" : "courses"}
-                  </span>
+              {/* Weekdays */}
 
-                  <label className="flex cursor-pointer items-center gap-3 text-sm text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={showInactive}
-                      onChange={(event) =>
-                        setShowInactive(event.target.checked)
-                      }
-                      className="h-4 w-4 rounded border-slate-300"
-                    />
+              <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50">
+                {[
+                  "Monday",
+                  "Tuesday",
+                  "Wednesday",
+                  "Thursday",
+                  "Friday",
+                  "Saturday",
+                  "Sunday",
+                ].map((day) => (
+                  <div
+                    key={day}
+                    className="px-1 py-3 text-center text-[10px] font-bold uppercase tracking-wide text-slate-400 sm:px-3 sm:text-xs"
+                  >
+                    <span className="sm:hidden">{day.slice(0, 3)}</span>
+                    <span className="hidden sm:inline">{day}</span>
+                  </div>
+                ))}
+              </div>
 
-                    Show inactive courses
-                  </label>
-                </div>
+              {/* Days */}
+
+              <div className="grid grid-cols-7">
+                {calendarDays.map((day) => {
+                  const isToday =
+                    day.date.toDateString() === new Date().toDateString();
+
+                  const isCurrentMonth =
+                    day.date.getMonth() === currentMonth.getMonth();
+
+                  const isSessionStart =
+                    session?.start_date &&
+                    sameDate(day.date, session.start_date);
+
+                  const isSessionEnd =
+                    session?.end_date &&
+                    sameDate(day.date, session.end_date);
+
+                  const isTermStart =
+                    term?.start_date &&
+                    sameDate(day.date, term.start_date);
+
+                  const isTermEnd =
+                    term?.end_date &&
+                    sameDate(day.date, term.end_date);
+
+                  return (
+                    <div
+                      key={day.key}
+                      className={`min-h-[86px] border-b border-r border-slate-100 p-1.5 sm:min-h-[120px] sm:p-2 ${
+                        isCurrentMonth ? "bg-white" : "bg-slate-50/60"
+                      }`}
+                    >
+                      <div className="flex justify-end">
+                        <span
+                          className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${
+                            isToday
+                              ? "text-white"
+                              : isCurrentMonth
+                                ? "text-slate-700"
+                                : "text-slate-300"
+                          }`}
+                          style={
+                            isToday
+                              ? { backgroundColor: SCHOOL_BLUE }
+                              : undefined
+                          }
+                        >
+                          {day.date.getDate()}
+                        </span>
+                      </div>
+
+                      <div className="mt-1 space-y-1">
+                        {isSessionStart && (
+                          <CalendarEvent
+                            label="Session begins"
+                            type="session"
+                            schoolBlue={SCHOOL_BLUE}
+                            schoolGold={SCHOOL_GOLD}
+                          />
+                        )}
+
+                        {isSessionEnd && (
+                          <CalendarEvent
+                            label="Session ends"
+                            type="session"
+                            schoolBlue={SCHOOL_BLUE}
+                            schoolGold={SCHOOL_GOLD}
+                          />
+                        )}
+
+                        {isTermStart && (
+                          <CalendarEvent
+                            label="Term begins"
+                            type="term"
+                            schoolBlue={SCHOOL_BLUE}
+                            schoolGold={SCHOOL_GOLD}
+                          />
+                        )}
+
+                        {isTermEnd && (
+                          <CalendarEvent
+                            label="Term ends"
+                            type="term"
+                            schoolBlue={SCHOOL_BLUE}
+                            schoolGold={SCHOOL_GOLD}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
             {/* ============================================
-                COURSE LIST
+                LEGEND
             ============================================ */}
 
-            {filteredCourses.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
+            <div className="mt-6 grid gap-4 sm:grid-cols-3">
+              <CalendarInfoCard
+                icon={<CalendarDays size={19} />}
+                title="Academic Session"
+                text={session?.name ?? "Current session"}
+                accent={SCHOOL_BLUE}
+              />
+
+              <CalendarInfoCard
+                icon={<Clock3 size={19} />}
+                title="Current Term"
+                text={term?.name ?? "Current term"}
+                accent={SCHOOL_GOLD}
+              />
+
+              <CalendarInfoCard
+                icon={<CheckCircle2 size={19} />}
+                title="Current Status"
+                text="Academic period active"
+                accent="#059669"
+              />
+            </div>
+
+            {/* ============================================
+                NOTICE
+            ============================================ */}
+
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-start gap-3">
                 <div
-                  className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
                   style={{
                     backgroundColor: `${SCHOOL_BLUE}10`,
                     color: SCHOOL_BLUE,
                   }}
                 >
-                  <BookOpen size={25} />
+                  <FileText size={19} />
                 </div>
 
-                <h2 className="mt-5 text-lg font-semibold text-slate-900">
-                  No courses found
-                </h2>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Academic calendar information
+                  </h3>
 
-                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-                  {search
-                    ? "No assigned courses match your search."
-                    : "You currently have no courses assigned for this academic term."}
-                </p>
-
-                {search && (
-                  <button
-                    onClick={() => setSearch("")}
-                    className="mt-5 text-sm font-semibold underline underline-offset-4"
-                    style={{ color: SCHOOL_BLUE }}
-                  >
-                    Clear search
-                  </button>
-                )}
+                  <p className="mt-1 text-sm leading-6 text-slate-500">
+                    Session and term dates shown here are taken directly from
+                    the school&apos;s current academic session and term
+                    configuration.
+                  </p>
+                </div>
               </div>
-            ) : (
-              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                {filteredCourses.map((item) => (
-                  <ResultCourseCard
-                    key={item.course.id}
-                    item={item}
-                    schoolBlue={SCHOOL_BLUE}
-                    schoolBlueDark={SCHOOL_BLUE_DARK}
-                    schoolGold={SCHOOL_GOLD}
-                  />
-                ))}
-              </div>
-            )}
+            </div>
           </div>
         </main>
       </div>
@@ -1074,6 +1000,7 @@ function StaffSidebar({
             }
           >
             <UserRound size={18} />
+
             <span>Profile</span>
           </Link>
         </nav>
@@ -1141,9 +1068,7 @@ function StaffTopbar({
             {staffName}
           </p>
 
-          <p className="text-xs text-slate-400">
-            Staff Member
-          </p>
+          <p className="text-xs text-slate-400">Staff Member</p>
         </div>
 
         <div className="relative h-10 w-10 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
@@ -1168,247 +1093,183 @@ function StaffTopbar({
 }
 
 /* ==================================================
-   STAT CARD
+   PERIOD DATE
 ================================================== */
 
-function StatCard({
+function PeriodDate({
   label,
-  value,
-  icon,
-  accent,
+  date,
 }: {
   label: string;
-  value: number;
-  icon: React.ReactNode;
-  accent: string;
+  date: string | null | undefined;
 }) {
   return (
-    <div className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-      <div className="flex items-center justify-between">
-        <div
-          className="flex h-11 w-11 items-center justify-center rounded-xl"
-          style={{
-            backgroundColor: `${accent}12`,
-            color: accent,
-          }}
-        >
-          {icon}
-        </div>
-
-        <div
-          className="h-1.5 w-1.5 rounded-full"
-          style={{ backgroundColor: accent }}
-        />
-      </div>
-
-      <div className="mt-5">
-        <p className="text-sm text-slate-500">{label}</p>
-
-        <p className="mt-1 text-2xl font-bold tracking-tight text-slate-950">
-          {value}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/* ==================================================
-   COURSE CARD
-================================================== */
-
-function ResultCourseCard({
-  item,
-  schoolBlue,
-  schoolBlueDark,
-  schoolGold,
-}: {
-  item: CourseResult;
-  schoolBlue: string;
-  schoolBlueDark: string;
-  schoolGold: string;
-}) {
-  const {
-    course,
-    studentCount,
-    resultCount,
-    publishedCount,
-    pendingCount,
-  } = item;
-
-  const progress =
-    studentCount > 0
-      ? Math.min(Math.round((resultCount / studentCount) * 100), 100)
-      : 0;
-
-  const publishedProgress =
-    resultCount > 0
-      ? Math.min(Math.round((publishedCount / resultCount) * 100), 100)
-      : 0;
-
-  return (
-    <div className="group overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg">
-      {/* Accent */}
-
-      <div
-        className="h-1"
-        style={{
-          background: `linear-gradient(90deg, ${schoolBlue}, ${schoolGold})`,
-        }}
-      />
-
-      {/* Content */}
-
-      <div className="p-5 sm:p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <div
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-sm font-bold text-white"
-              style={{
-                background: `linear-gradient(135deg, ${schoolBlue}, ${schoolBlueDark})`,
-              }}
-            >
-              {course.code.slice(0, 2).toUpperCase()}
-            </div>
-
-            <div className="min-w-0">
-              <p
-                className="text-xs font-bold uppercase tracking-wide"
-                style={{ color: schoolBlue }}
-              >
-                {course.code}
-              </p>
-
-              <h2 className="mt-1 truncate text-base font-bold text-slate-950">
-                {course.name}
-              </h2>
-            </div>
-          </div>
-
-          <span
-            className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
-              course.is_active
-                ? "bg-emerald-50 text-emerald-700"
-                : "bg-slate-100 text-slate-500"
-            }`}
-          >
-            {course.is_active ? "Active" : "Inactive"}
-          </span>
-        </div>
-
-        {course.description && (
-          <p className="mt-4 line-clamp-2 text-sm leading-6 text-slate-500">
-            {course.description}
-          </p>
-        )}
-
-        {/* Completion */}
-
-        <div className="mt-6">
-          <div className="mb-2 flex items-center justify-between text-xs">
-            <span className="font-medium text-slate-500">
-              Results completion
-            </span>
-
-            <span
-              className="font-bold"
-              style={{ color: schoolBlueDark }}
-            >
-              {progress}%
-            </span>
-          </div>
-
-          <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-            <div
-              className="h-full rounded-full transition-all duration-500"
-              style={{
-                width: `${progress}%`,
-                background: `linear-gradient(90deg, ${schoolBlue}, ${schoolBlueDark})`,
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Stats */}
-
-        <div className="mt-6 grid grid-cols-3 divide-x divide-slate-100 rounded-2xl border border-slate-100 bg-slate-50">
-          <MiniStat label="Students" value={studentCount} />
-
-          <MiniStat label="Entered" value={resultCount} />
-
-          <MiniStat label="Pending" value={pendingCount} />
-        </div>
-
-        {/* Published */}
-
-        <div className="mt-5">
-          <div className="mb-2 flex items-center justify-between text-sm">
-            <span className="text-slate-500">
-              Published results
-            </span>
-
-            <span className="font-semibold text-slate-900">
-              {publishedCount} / {resultCount}
-            </span>
-          </div>
-
-          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-            <div
-              className="h-full rounded-full"
-              style={{
-                width: `${publishedProgress}%`,
-                backgroundColor: schoolGold,
-              }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Actions */}
-
-      <div className="grid grid-cols-2 border-t border-slate-100">
-        <Link
-          href={`/staff-dashboard/courses/${course.id}/results`}
-          className="flex items-center justify-center gap-2 px-4 py-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-        >
-          View Results
-
-          <ArrowRight size={16} />
-        </Link>
-
-        <Link
-          href={`/staff-dashboard/courses/${course.id}/results`}
-          className="flex items-center justify-center gap-2 border-l border-slate-100 px-4 py-4 text-sm font-semibold text-white transition hover:opacity-90"
-          style={{
-            background: `linear-gradient(135deg, ${schoolBlue}, ${schoolBlueDark})`,
-          }}
-        >
-          Enter Results
-
-          <Plus size={16} />
-        </Link>
-      </div>
-    </div>
-  );
-}
-
-/* ==================================================
-   MINI STAT
-================================================== */
-
-function MiniStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: number;
-}) {
-  return (
-    <div className="px-3 py-3 text-center">
-      <p className="text-base font-bold text-slate-900">{value}</p>
-
-      <p className="mt-0.5 text-[11px] text-slate-400">
+    <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
         {label}
+      </p>
+
+      <p className="mt-1 text-sm font-semibold text-slate-800">
+        {formatDate(date)}
       </p>
     </div>
   );
+}
+
+/* ==================================================
+   CALENDAR EVENT
+================================================== */
+
+function CalendarEvent({
+  label,
+  type,
+  schoolBlue,
+  schoolGold,
+}: {
+  label: string;
+  type: "session" | "term";
+  schoolBlue: string;
+  schoolGold: string;
+}) {
+  return (
+    <div
+      className="truncate rounded-md px-1.5 py-1 text-[9px] font-semibold sm:px-2 sm:text-[10px]"
+      style={{
+        backgroundColor:
+          type === "session"
+            ? `${schoolBlue}12`
+            : `${schoolGold}20`,
+        color: type === "session" ? schoolBlue : "#946200",
+      }}
+      title={label}
+    >
+      {label}
+    </div>
+  );
+}
+
+/* ==================================================
+   INFO CARD
+================================================== */
+
+function CalendarInfoCard({
+  icon,
+  title,
+  text,
+  accent,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  text: string;
+  accent: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div
+        className="flex h-10 w-10 items-center justify-center rounded-xl"
+        style={{
+          backgroundColor: `${accent}12`,
+          color: accent,
+        }}
+      >
+        {icon}
+      </div>
+
+      <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">
+        {title}
+      </p>
+
+      <p className="mt-1 text-sm font-semibold text-slate-900">
+        {text}
+      </p>
+    </div>
+  );
+}
+
+/* ==================================================
+   CALENDAR HELPERS
+================================================== */
+
+function buildCalendarDays(month: Date) {
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+
+  const firstDay = new Date(year, monthIndex, 1);
+
+  // Convert JS Sunday=0 into Monday=0
+  const startingDay =
+    firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+
+  const daysInMonth = new Date(
+    year,
+    monthIndex + 1,
+    0,
+  ).getDate();
+
+  const daysInPreviousMonth = new Date(
+    year,
+    monthIndex,
+    0,
+  ).getDate();
+
+  const totalCells = 42;
+
+  return Array.from({ length: totalCells }, (_, index) => {
+    let date: Date;
+
+    if (index < startingDay) {
+      date = new Date(
+        year,
+        monthIndex - 1,
+        daysInPreviousMonth - startingDay + index + 1,
+      );
+    } else if (index >= startingDay + daysInMonth) {
+      date = new Date(
+        year,
+        monthIndex + 1,
+        index - startingDay - daysInMonth + 1,
+      );
+    } else {
+      date = new Date(
+        year,
+        monthIndex,
+        index - startingDay + 1,
+      );
+    }
+
+    return {
+      date,
+      key: `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`,
+    };
+  });
+}
+
+function sameDate(date: Date, isoDate: string) {
+  const target = new Date(`${isoDate}T00:00:00`);
+
+  if (Number.isNaN(target.getTime())) {
+    return false;
+  }
+
+  return (
+    date.getFullYear() === target.getFullYear() &&
+    date.getMonth() === target.getMonth() &&
+    date.getDate() === target.getDate()
+  );
+}
+
+function formatDate(date: string | null | undefined) {
+  if (!date) return "Not set";
+
+  const parsed = new Date(`${date}T00:00:00`);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return "Not set";
+  }
+
+  return parsed.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }

@@ -24,7 +24,7 @@ const SCHOOL_GOLD = "#FFAF2E";
 
 const heroSlides = [
   {
-    image: "/images/mssn-al-irshad-model-school-ila-orangun-campus.png",
+    image: "/images/mssn-al-irshad-model-school-ila-orangun-campus.jpg",
     title: "A School Built for Excellence",
     text: "A purposeful environment where knowledge, character and faith grow together.",
   },
