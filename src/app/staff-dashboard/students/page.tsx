@@ -64,7 +64,6 @@ type Student = {
   guardian_phone: string | null;
   profile_photo: string | null;
   lga: string | null;
-
   classes: {
     id: string;
     name: string;
@@ -232,60 +231,137 @@ export default function StaffStudentsPage() {
          *
          * This now matches the REAL students table schema.
          */
+      try {
+  // 1. Load students
+            /*
+          * STUDENTS
+          */
 
         const { data: studentRecords, error: studentsError } = await supabase
           .from("students")
-          .select(
-            `
-    id,
-    user_id,
-    student_id,
-    class_id,
-    admission_number,
-    admission_date,
-    date_of_birth,
-    status,
-    created_at,
-    updated_at,
-    full_name,
-    phone,
-    address,
-    state,
-    guardian_name,
-    guardian_phone,
-    profile_photo,
-    lga,
-    classes (
-      id,
-      name
-    )
-  `,
-          )
+          .select(`
+            id,
+            user_id,
+            student_id,
+            class_id,
+            admission_number,
+            admission_date,
+            date_of_birth,
+            status,
+            created_at,
+            updated_at,
+            full_name,
+            phone,
+            address,
+            state,
+            guardian_name,
+            guardian_phone,
+            profile_photo,
+            lga
+          `)
           .order("full_name", { ascending: true });
 
         if (studentsError) {
           console.error("Students query error:", studentsError);
 
-          throw new Error(studentsError.message || "Unable to load students.");
+          throw new Error(
+            studentsError.message || "Unable to load students.",
+          );
         }
 
-        setStudents(
+        console.log("Students query result:", studentRecords);
+
+        console.log(
+          "STUDENT CLASS DEBUG:",
           (studentRecords ?? []).map((student) => ({
-            ...student,
-            classes: student.classes?.[0] ?? null,
+            student: student.full_name,
+            class_id: student.class_id,
           })),
         );
+
+        /*
+        * LOAD CLASSES
+        */
+
+        const classIds = Array.from(
+          new Set(
+            (studentRecords ?? [])
+              .map((student) => student.class_id)
+              .filter((id): id is string => Boolean(id)),
+          ),
+        );
+
+        let classesMap = new Map<
+          string,
+          {
+            id: string;
+            name: string;
+          }
+        >();
+
+        if (classIds.length > 0) {
+          const { data: classRecords, error: classesError } = await supabase
+            .from("classes")
+            .select(`
+              id,
+              name
+            `)
+            .in("id", classIds);
+
+          if (classesError) {
+            console.error("Classes query error:", classesError);
+
+            throw new Error(
+              classesError.message || "Unable to load classes.",
+            );
+          }
+
+          classesMap = new Map(
+            (classRecords ?? []).map((classItem) => [
+              classItem.id,
+              {
+                id: classItem.id,
+                name: classItem.name,
+              },
+            ]),
+          );
+        }
+
+        /*
+        * COMBINE STUDENTS + CLASS
+        */
+
+        const formattedStudents: Student[] = (studentRecords ?? []).map(
+          (student) => ({
+            ...student,
+            classes: student.class_id
+              ? classesMap.get(student.class_id) ?? null
+              : null,
+          }),
+        );
+
+            // 5. Save students
+            setStudents(formattedStudents);
+          } catch (err) {
+            console.error("Error loading students:", err);
+
+            setError(
+              err instanceof Error
+                ? err.message
+                : "Something went wrong while loading students.",
+            );
+          } finally {
+            setLoading(false);
+            setRefreshing(false);
+          }
       } catch (err) {
-        console.error(err);
+        console.error("Error loading staff data:", err);
 
         setError(
           err instanceof Error
             ? err.message
-            : "Something went wrong while loading students.",
+            : "Something went wrong while loading the dashboard.",
         );
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
       }
     },
     [supabase],
