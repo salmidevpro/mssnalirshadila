@@ -456,26 +456,12 @@ export default function Footer() {
           </p>
 
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-            <Link
-              href="/about"
+            <Link target="_blank"
+              href="https://salmidevpro.com"
               className="text-white/40 transition-colors duration-300 hover:text-white"
             >
-              About
-            </Link>
-
-            <Link
-              href="/faq"
-              className="text-white/40 transition-colors duration-300 hover:text-white"
-            >
-              FAQ
-            </Link>
-
-            <Link
-              href="/contact"
-              className="text-white/40 transition-colors duration-300 hover:text-white"
-            >
-              Contact
-            </Link>
+              Developed by Salmi Dev Pro Digital Agency
+            </Link>   
           </div>
         </div>
       </div>

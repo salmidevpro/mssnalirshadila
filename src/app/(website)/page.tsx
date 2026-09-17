@@ -29,7 +29,7 @@ const heroSlides = [
     text: "A purposeful environment where knowledge, character and faith grow together.",
   },
   {
-    image: "/images/school-2.jpg",
+    image: "/images/mssn-al-irshad-model-school-ila-orangun-front-view.jpg",
     title: "Learning Beyond the Classroom",
     text: "Creating opportunities for students to learn, discover and develop their potential.",
   },

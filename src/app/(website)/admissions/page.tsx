@@ -87,7 +87,7 @@ export default function AdmissionsPage() {
       <section className="relative overflow-hidden bg-[#00004D] pt-28 sm:pt-32 lg:pt-36">
         <div className="absolute inset-0">
           <Image
-            src="/images/mssn-al-irshad-model-school-ila-orangun-campus.png"
+            src="/images/mssn-al-irshad-model-school-ila-orangun-campus.jpg"
             alt="MSSN Al-Irshad Model School campus"
             fill
             priority
@@ -622,7 +622,7 @@ export default function AdmissionsPage() {
               </Link>
 
               <a
-                href="tel:+2340000000000"
+                href="tel:+234 803 721 1673"
                 className="group inline-flex min-h-[52px] min-w-[220px] items-center justify-center gap-2 rounded-full border border-white/20 bg-white/10 px-7 py-3 text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white hover:text-[#010066]"
               >
                 <Phone size={16} />
@@ -688,7 +688,7 @@ export default function AdmissionsPage() {
               </p>
 
               <a
-                href="mailto:info@example.com"
+                href="mailto:mssnalirshad@gmail.com"
                 className="mt-5 inline-flex items-center gap-2 text-sm font-bold"
                 style={{ color: SCHOOL_BLUE }}
               >

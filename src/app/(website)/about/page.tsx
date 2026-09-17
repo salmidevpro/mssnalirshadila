@@ -471,11 +471,11 @@ export default function AboutPage() {
                   in accordance with the understanding of the Salaf.
                 </h3>
 
-                <p className="mt-4 text-sm leading-7 text-slate-500 sm:text-base">
+                {/* <p className="mt-4 text-sm leading-7 text-slate-500 sm:text-base">
                    To become a leading islamic school in the Nation (In Shaa Allah) which shall uphold; 
                   the Qur&apos;an and Sunnah of the holy Prophet Muhammad
                   in accordance with the understanding of the Salaf.
-                </p> 
+                </p>  */}
               </div>
             </motion.article>
 
@@ -533,15 +533,15 @@ export default function AboutPage() {
                     color: SCHOOL_BLUE_DARK,
                   }}
                 >
-                  Education that transforms lives.
+                 To provide a balanced education at affordable costs without compromising standard.
                 </h3>
 
-                <p className="mt-4 text-sm leading-7 text-slate-500 sm:text-base">
+                {/* <p className="mt-4 text-sm leading-7 text-slate-500 sm:text-base">
                   To provide quality and holistic education that combines
                   sound Islamic upbringing, academic excellence, character
                   development and practical skills, preparing learners to
                   become responsible and productive members of society.
-                </p>
+                </p> */}
               </div>
             </motion.article>
           </div>
