@@ -72,7 +72,7 @@ export default function StaffPortalPage() {
     };
 
     checkExistingSession();
-  }, []);
+  }, [router]);
 
   /*
    * Resolve either:
@@ -337,7 +337,7 @@ export default function StaffPortalPage() {
               duration: 0.5,
               delay: 0.08,
             }}
-            className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-[0_25px_80px_rgba(1,0,102,0.09)] sm:p-8"
+            className="rounded-4xl border border-slate-200 bg-white p-6 shadow-[0_25px_80px_rgba(1,0,102,0.09)] sm:p-8"
           >
             {/* Portal Header */}
 
@@ -489,16 +489,15 @@ export default function StaffPortalPage() {
               {/* Forgot Password */}
 
               <div className="flex justify-end">
-                <button
-                  type="button"
-                  disabled={isLoading}
-                  className="text-xs font-semibold transition-colors duration-200 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                <Link
+                  href="/staff-login/staff/forgot-password"
+                  className="text-xs font-semibold transition-colors duration-200 hover:underline"
                   style={{
                     color: SCHOOL_BLUE,
                   }}
                 >
                   Forgot password?
-                </button>
+                </Link>
               </div>
 
               {/* =================================================

@@ -25,6 +25,7 @@ import {
   UserRound,
   Layers3,
   Plus,
+  Settings,
   type LucideIcon,
 } from "lucide-react";
 
@@ -1075,6 +1076,26 @@ function StaffSidebar({
           >
             <UserRound size={18} />
             <span>Profile</span>
+          </Link>
+
+          <Link
+            href="/staff-dashboard/settings"
+            onClick={() => setMobileMenuOpen(false)}
+            className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
+              pathname.startsWith("/staff-dashboard/settings")
+                ? "text-white shadow-sm"
+                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+            }`}
+            style={
+              pathname.startsWith("/staff-dashboard/settings")
+                ? {
+                    background: `linear-gradient(135deg, ${SCHOOL_BLUE}, ${SCHOOL_BLUE_DARK})`,
+                  }
+                : undefined
+            }
+          >
+            <Settings size={18} />
+            <span>Settings</span>
           </Link>
         </nav>
 

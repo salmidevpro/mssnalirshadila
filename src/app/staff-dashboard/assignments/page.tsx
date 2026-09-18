@@ -25,6 +25,7 @@ import {
   UserRound,
   Users,
   X,
+  Settings,
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
@@ -148,6 +149,11 @@ const secondaryNavigation = [
     label: "Profile",
     href: "/staff-dashboard/profile",
     icon: UserRound,
+  },
+  {
+    label: "Settings",
+    href: "/staff-dashboard/settings",
+    icon: Settings,
   },
 ];
 

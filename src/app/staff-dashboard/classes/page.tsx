@@ -22,6 +22,7 @@ import {
   UserRound,
   Users,
   X,
+  Settings,
   type LucideIcon,
 } from "lucide-react";
 
@@ -149,6 +150,11 @@ const navItems: NavItem[] = [
     href: "/staff-dashboard/profile",
     icon: UserRound,
   },
+   {
+      label: "Settings",
+      href: "/staff-dashboard/settings",
+      icon: Settings,
+    },
 ];
 
 /* =========================================================

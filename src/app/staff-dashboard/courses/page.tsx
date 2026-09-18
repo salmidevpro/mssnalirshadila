@@ -23,6 +23,7 @@ import {
   Bell,
   Search,
   RefreshCw,
+  Settings,
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -147,7 +148,7 @@ const secondaryNavigation = [
   {
     label: "Settings",
     href: "/staff-dashboard/settings",
-    icon: UserRound,
+    icon: Settings,
   },
 ];
 

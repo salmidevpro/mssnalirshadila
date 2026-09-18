@@ -23,6 +23,7 @@ import {
   X,
   Check,
   ChevronDown,
+  Settings,
 } from "lucide-react";
 import {
   useCallback,
@@ -165,7 +166,7 @@ const secondaryNavigation = [
   {
     label: "Settings",
     href: "/staff-dashboard/settings",
-    icon: Bell,
+    icon: Settings,
   },
 ];
 
