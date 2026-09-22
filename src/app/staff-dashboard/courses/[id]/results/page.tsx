@@ -62,10 +62,7 @@ type Enrollment = {
   class_id: string;
   session_id: string;
   status: string;
-  students:
-    | Student
-    | Student[]
-    | null;
+  students: Student | Student[] | null;
 };
 
 type Result = {
@@ -126,9 +123,8 @@ export default function CourseResultsPage() {
 
   const [rows, setRows] = useState<ResultRow[]>([]);
 
-  const [gradingScale, setGradingScale] = useState<
-    GradingScale[]
-  >([]);
+  const [gradingScale, setGradingScale] =
+    useState<GradingScale[]>([]);
 
   const [scoringConfig, setScoringConfig] =
     useState<ScoringConfiguration | null>(null);
@@ -147,6 +143,12 @@ export default function CourseResultsPage() {
     loadPage();
   }, [courseId]);
 
+  /*
+   * ==========================================================
+   * LOAD PAGE
+   * ==========================================================
+   */
+
   async function loadPage() {
     setLoading(true);
     setError("");
@@ -154,9 +156,9 @@ export default function CourseResultsPage() {
 
     try {
       /*
-       * =====================================================
+       * ======================================================
        * 1. AUTH
-       * =====================================================
+       * ======================================================
        */
 
       const {
@@ -170,9 +172,9 @@ export default function CourseResultsPage() {
       }
 
       /*
-       * =====================================================
+       * ======================================================
        * 2. STAFF
-       * =====================================================
+       * ======================================================
        */
 
       const { data: staff, error: staffError } =
@@ -198,17 +200,21 @@ export default function CourseResultsPage() {
       }
 
       /*
-       * =====================================================
+       * ======================================================
        * 3. CURRENT SESSION
-       * =====================================================
+       * ======================================================
        */
 
-      const { data: currentSession, error: sessionError } =
-        await supabase
-          .from("academic_sessions")
-          .select("id, name, is_current")
-          .eq("is_current", true)
-          .maybeSingle<AcademicSession>();
+      const {
+        data: currentSession,
+        error: sessionError,
+      } = await supabase
+        .from("academic_sessions")
+        .select(
+          "id, name, is_current"
+        )
+        .eq("is_current", true)
+        .maybeSingle<AcademicSession>();
 
       if (sessionError) {
         throw new Error(
@@ -225,18 +231,22 @@ export default function CourseResultsPage() {
       setSession(currentSession);
 
       /*
-       * =====================================================
+       * ======================================================
        * 4. CURRENT TERM
-       * =====================================================
+       * ======================================================
        */
 
-      const { data: currentTerm, error: termError } =
-        await supabase
-          .from("academic_terms")
-          .select("id, name, is_current")
-          .eq("session_id", currentSession.id)
-          .eq("is_current", true)
-          .maybeSingle<AcademicTerm>();
+      const {
+        data: currentTerm,
+        error: termError,
+      } = await supabase
+        .from("academic_terms")
+        .select(
+          "id, name, is_current"
+        )
+        .eq("session_id", currentSession.id)
+        .eq("is_current", true)
+        .maybeSingle<AcademicTerm>();
 
       if (termError) {
         throw new Error(
@@ -253,30 +263,31 @@ export default function CourseResultsPage() {
       setTerm(currentTerm);
 
       /*
-       * =====================================================
+       * ======================================================
        * 5. VERIFY COURSE ASSIGNMENT
-       * =====================================================
+       * ======================================================
        */
 
       const {
         data: courseAssignment,
         error: courseAssignmentError,
-      } = await supabase
-        .from("course_teachers")
-        .select(
-          `
-            id,
-            course_id,
-            teacher_id,
-            session_id,
-            term_id
-          `
-        )
-        .eq("course_id", courseId)
-        .eq("teacher_id", staff.id)
-        .eq("session_id", currentSession.id)
-        .eq("term_id", currentTerm.id)
-        .maybeSingle<CourseTeacher>();
+      } =
+        await supabase
+          .from("course_teachers")
+          .select(
+            `
+              id,
+              course_id,
+              teacher_id,
+              session_id,
+              term_id
+            `
+          )
+          .eq("course_id", courseId)
+          .eq("teacher_id", staff.id)
+          .eq("session_id", currentSession.id)
+          .eq("term_id", currentTerm.id)
+          .maybeSingle<CourseTeacher>();
 
       if (courseAssignmentError) {
         throw new Error(
@@ -291,19 +302,21 @@ export default function CourseResultsPage() {
       }
 
       /*
-       * =====================================================
+       * ======================================================
        * 6. COURSE
-       * =====================================================
+       * ======================================================
        */
 
-      const { data: courseData, error: courseError } =
-        await supabase
-          .from("courses")
-          .select(
-            "id, code, name, class_id"
-          )
-          .eq("id", courseId)
-          .maybeSingle<Course>();
+      const {
+        data: courseData,
+        error: courseError,
+      } = await supabase
+        .from("courses")
+        .select(
+          "id, code, name, class_id"
+        )
+        .eq("id", courseId)
+        .maybeSingle<Course>();
 
       if (courseError) {
         throw new Error(
@@ -312,28 +325,93 @@ export default function CourseResultsPage() {
       }
 
       if (!courseData) {
-        throw new Error("Course not found.");
+        throw new Error(
+          "Course not found."
+        );
       }
 
       setCourse(courseData);
 
       if (!courseData.class_id) {
         setRows([]);
+        setScoringConfig(null);
+        setGradingScale([]);
         return;
       }
 
       /*
-       * =====================================================
+       * ======================================================
        * 7. SCORING CONFIGURATION
-       * =====================================================
+       * ======================================================
        *
-       * We first try class-specific configuration.
-       * If none exists, we fall back to a general
-       * session configuration.
+       * Priority:
+       *
+       * 1. Class-specific configuration
+       * 2. General session configuration
+       *
+       * We do NOT silently create a fake 40/60 configuration.
        */
 
-      const { data: classConfig } =
-        await supabase
+      let activeScoringConfig:
+        | ScoringConfiguration
+        | null = null;
+
+      /*
+       * ------------------------------------------------------
+       * 7A. CLASS-SPECIFIC CONFIGURATION
+       * ------------------------------------------------------
+       */
+
+      const {
+        data: classConfig,
+        error: classConfigError,
+      } = await supabase
+        .from("scoring_configurations")
+        .select(
+          `
+            id,
+            ca_weight,
+            exam_weight,
+            is_active
+          `
+        )
+        .eq(
+          "session_id",
+          currentSession.id
+        )
+        .eq(
+          "class_id",
+          courseData.class_id
+        )
+        .eq(
+          "is_active",
+          true
+        )
+        .maybeSingle<ScoringConfiguration>();
+
+      if (classConfigError) {
+        console.warn(
+          "Unable to load class scoring configuration:",
+          classConfigError
+        );
+      }
+
+      if (classConfig) {
+        activeScoringConfig =
+          classConfig;
+      }
+
+      /*
+       * ------------------------------------------------------
+       * 7B. GENERAL SESSION CONFIGURATION
+       * ------------------------------------------------------
+       */
+
+      if (!activeScoringConfig) {
+        const {
+          data: generalConfig,
+          error: generalConfigError,
+        } = await supabase
           .from("scoring_configurations")
           .select(
             `
@@ -343,50 +421,153 @@ export default function CourseResultsPage() {
               is_active
             `
           )
-          .eq("session_id", currentSession.id)
-          .eq("class_id", courseData.class_id)
-          .eq("is_active", true)
+          .eq(
+            "session_id",
+            currentSession.id
+          )
+          .is(
+            "class_id",
+            null
+          )
+          .eq(
+            "is_active",
+            true
+          )
           .maybeSingle<ScoringConfiguration>();
 
-      let activeConfig = classConfig;
+        if (generalConfigError) {
+          console.warn(
+            "Unable to load general scoring configuration:",
+            generalConfigError
+          );
+        }
 
-      if (!activeConfig) {
-        const { data: generalConfig } =
-          await supabase
-            .from("scoring_configurations")
-            .select(
-              `
-                id,
-                ca_weight,
-                exam_weight,
-                is_active
-              `
-            )
-            .eq("session_id", currentSession.id)
-            .is("class_id", null)
-            .eq("is_active", true)
-            .maybeSingle<ScoringConfiguration>();
+        if (generalConfig) {
+          activeScoringConfig =
+            generalConfig;
+        }
+      }
 
-        activeConfig = generalConfig;
+      /*
+       * ------------------------------------------------------
+       * Validate scoring configuration
+       * ------------------------------------------------------
+       */
+
+      if (!activeScoringConfig) {
+        setScoringConfig(null);
+
+        throw new Error(
+          "No scoring configuration has been set for this class or the current academic session. Please ask an administrator to configure the CA and Exam weights."
+        );
+      }
+
+      if (
+        Number(activeScoringConfig.ca_weight) < 0 ||
+        Number(activeScoringConfig.exam_weight) < 0
+      ) {
+        throw new Error(
+          "The scoring configuration contains invalid score weights."
+        );
+      }
+
+      const weightTotal =
+        Number(activeScoringConfig.ca_weight) +
+        Number(activeScoringConfig.exam_weight);
+
+      if (weightTotal <= 0) {
+        throw new Error(
+          "The scoring configuration must contain valid CA and Exam weights."
+        );
       }
 
       setScoringConfig(
-        activeConfig || {
-          id: "default",
-          ca_weight: 40,
-          exam_weight: 60,
-          is_active: true,
-        }
+        activeScoringConfig
       );
 
       /*
-       * =====================================================
+       * ======================================================
        * 8. GRADING SCALE
-       * =====================================================
+       * ======================================================
+       *
+       * Priority:
+       *
+       * 1. Class-specific grading scale
+       * 2. General session grading scale
        */
 
-      const { data: gradingData, error: gradingError } =
-        await supabase
+      let activeGradingScale:
+        GradingScale[] = [];
+
+      /*
+       * ------------------------------------------------------
+       * 8A. CLASS-SPECIFIC GRADING SCALE
+       * ------------------------------------------------------
+       */
+
+      const {
+        data: classGradingData,
+        error: classGradingError,
+      } = await supabase
+        .from("grading_scales")
+        .select(
+          `
+            id,
+            grade,
+            min_score,
+            max_score,
+            remark,
+            sort_order,
+            is_active
+          `
+        )
+        .eq(
+          "session_id",
+          currentSession.id
+        )
+        .eq(
+          "class_id",
+          courseData.class_id
+        )
+        .eq(
+          "is_active",
+          true
+        )
+        .order(
+          "sort_order",
+          {
+            ascending: true,
+          }
+        );
+
+      if (classGradingError) {
+        console.warn(
+          "Unable to load class-specific grading scale:",
+          classGradingError
+        );
+      }
+
+      if (
+        classGradingData &&
+        classGradingData.length > 0
+      ) {
+        activeGradingScale =
+          classGradingData as GradingScale[];
+      }
+
+      /*
+       * ------------------------------------------------------
+       * 8B. GENERAL SESSION GRADING SCALE
+       * ------------------------------------------------------
+       */
+
+      if (
+        activeGradingScale.length === 0
+      ) {
+        const {
+          data: generalGradingData,
+          error: generalGradingError,
+        } = await supabase
           .from("grading_scales")
           .select(
             `
@@ -399,30 +580,59 @@ export default function CourseResultsPage() {
               is_active
             `
           )
-          .eq("session_id", currentSession.id)
-          .eq("is_active", true)
-          .order("sort_order", {
-            ascending: true,
-          });
+          .eq(
+            "session_id",
+            currentSession.id
+          )
+          .is(
+            "class_id",
+            null
+          )
+          .eq(
+            "is_active",
+            true
+          )
+          .order(
+            "sort_order",
+            {
+              ascending: true,
+            }
+          );
 
-      if (gradingError) {
-        console.warn(
-          "Unable to load grading scale:",
-          gradingError
+        if (generalGradingError) {
+          console.warn(
+            "Unable to load general grading scale:",
+            generalGradingError
+          );
+        }
+
+        activeGradingScale =
+          (generalGradingData as GradingScale[]) ||
+          [];
+      }
+
+      /*
+       * ------------------------------------------------------
+       * Validate grading scale
+       * ------------------------------------------------------
+       */
+
+      if (
+        activeGradingScale.length === 0
+      ) {
+        throw new Error(
+          "No grading scale has been configured for this class or the current academic session. Please ask an administrator to configure the grading scale."
         );
       }
 
       setGradingScale(
-        (gradingData as GradingScale[]) || []
+        activeGradingScale
       );
 
       /*
-       * =====================================================
+       * ======================================================
        * 9. ENROLLED STUDENTS
-       * =====================================================
-       *
-       * IMPORTANT:
-       * student_enrollments DOES NOT have term_id.
+       * ======================================================
        */
 
       const {
@@ -445,9 +655,18 @@ export default function CourseResultsPage() {
             )
           `
         )
-        .eq("session_id", currentSession.id)
-        .eq("class_id", courseData.class_id)
-        .eq("status", "active");
+        .eq(
+          "session_id",
+          currentSession.id
+        )
+        .eq(
+          "class_id",
+          courseData.class_id
+        )
+        .eq(
+          "status",
+          "active"
+        );
 
       if (enrollmentError) {
         throw new Error(
@@ -456,73 +675,103 @@ export default function CourseResultsPage() {
       }
 
       /*
-       * Normalize Supabase's nested relationship.
+       * Normalize nested students.
        */
 
       const students: Student[] = (
-        (enrollmentData as Enrollment[]) || []
+        (enrollmentData as Enrollment[]) ||
+        []
       )
-        .flatMap((enrollment) => {
-          if (!enrollment.students) {
-            return [];
-          }
+        .flatMap(
+          (enrollment) => {
+            if (!enrollment.students) {
+              return [];
+            }
 
-          if (Array.isArray(enrollment.students)) {
-            return enrollment.students;
-          }
+            if (
+              Array.isArray(
+                enrollment.students
+              )
+            ) {
+              return enrollment.students;
+            }
 
-          return [enrollment.students];
-        })
+            return [
+              enrollment.students,
+            ];
+          }
+        )
         .filter(Boolean);
 
       /*
-       * Remove accidental duplicates.
+       * Remove duplicates.
        */
 
-      const uniqueStudents = Array.from(
-        new Map(
-          students.map((student) => [
-            student.id,
-            student,
-          ])
-        ).values()
-      );
+      const uniqueStudents =
+        Array.from(
+          new Map(
+            students.map(
+              (student) => [
+                student.id,
+                student,
+              ]
+            )
+          ).values()
+        );
 
       /*
-       * =====================================================
+       * ======================================================
        * 10. EXISTING RESULTS
-       * =====================================================
+       * ======================================================
        */
 
       let existingResults: Result[] = [];
 
-      if (uniqueStudents.length > 0) {
-        const studentIds = uniqueStudents.map(
-          (student) => student.id
-        );
+      if (
+        uniqueStudents.length > 0
+      ) {
+        const studentIds =
+          uniqueStudents.map(
+            (student) =>
+              student.id
+          );
 
-        const { data: resultData, error: resultError } =
-          await supabase
-            .from("results")
-            .select(
-              `
-                id,
-                student_id,
-                course_id,
-                session_id,
-                term_id,
-                ca_score,
-                exam_score,
-                total_score,
-                grade,
-                remark,
-                published
-              `
-            )
-            .eq("course_id", courseId)
-            .eq("session_id", currentSession.id)
-            .eq("term_id", currentTerm.id)
-            .in("student_id", studentIds);
+        const {
+          data: resultData,
+          error: resultError,
+        } = await supabase
+          .from("results")
+          .select(
+            `
+              id,
+              student_id,
+              course_id,
+              session_id,
+              term_id,
+              ca_score,
+              exam_score,
+              total_score,
+              grade,
+              remark,
+              published
+            `
+          )
+          .eq(
+            "course_id",
+            courseId
+          )
+          .eq(
+            "session_id",
+            currentSession.id
+          )
+          .eq(
+            "term_id",
+            currentTerm.id
+          )
+          .in(
+            "student_id",
+            studentIds
+          );
 
         if (resultError) {
           throw new Error(
@@ -531,44 +780,61 @@ export default function CourseResultsPage() {
         }
 
         existingResults =
-          (resultData as Result[]) || [];
+          (resultData as Result[]) ||
+          [];
       }
 
       /*
-       * =====================================================
+       * ======================================================
        * 11. BUILD TABLE ROWS
-       * =====================================================
+       * ======================================================
        */
 
-      const resultMap = new Map(
-        existingResults.map((result) => [
-          result.student_id,
-          result,
-        ])
-      );
+      const resultMap =
+        new Map(
+          existingResults.map(
+            (result) => [
+              result.student_id,
+              result,
+            ]
+          )
+        );
 
       const tableRows: ResultRow[] =
-        uniqueStudents.map((student) => {
-          const result = resultMap.get(student.id) || null;
+        uniqueStudents.map(
+          (student) => {
+            const result =
+              resultMap.get(
+                student.id
+              ) || null;
 
-          return {
-            student,
-            result,
-            input: {
-              ca_score:
-                result?.ca_score !== null &&
-                result?.ca_score !== undefined
-                  ? String(result.ca_score)
-                  : "",
+            return {
+              student,
+              result,
+              input: {
+                ca_score:
+                  result?.ca_score !==
+                    null &&
+                  result?.ca_score !==
+                    undefined
+                    ? String(
+                        result.ca_score
+                      )
+                    : "",
 
-              exam_score:
-                result?.exam_score !== null &&
-                result?.exam_score !== undefined
-                  ? String(result.exam_score)
-                  : "",
-            },
-          };
-        });
+                exam_score:
+                  result?.exam_score !==
+                    null &&
+                  result?.exam_score !==
+                    undefined
+                    ? String(
+                        result.exam_score
+                      )
+                    : "",
+              },
+            };
+          }
+        );
 
       setRows(tableRows);
     } catch (err) {
@@ -593,9 +859,19 @@ export default function CourseResultsPage() {
   function calculateTotal(
     ca: string,
     exam: string
-  ) {
-    const caScore = Number(ca);
-    const examScore = Number(exam);
+  ): number | null {
+    if (
+      ca === "" ||
+      exam === ""
+    ) {
+      return null;
+    }
+
+    const caScore =
+      Number(ca);
+
+    const examScore =
+      Number(exam);
 
     if (
       !Number.isFinite(caScore) ||
@@ -605,29 +881,21 @@ export default function CourseResultsPage() {
     }
 
     const caWeight =
-      scoringConfig?.ca_weight ?? 40;
+      Number(
+        scoringConfig?.ca_weight
+      );
 
     const examWeight =
-      scoringConfig?.exam_weight ?? 60;
+      Number(
+        scoringConfig?.exam_weight
+      );
 
-    /*
-     * CA and Exam values are entered according to
-     * their configured maximum weights.
-     *
-     * Example:
-     * CA = 32 / 40
-     * Exam = 51 / 60
-     * Total = 83
-     */
-
-    const total =
-      caScore + examScore;
-
-    /*
-     * We keep the configured weights visible
-     * in the UI, but scores themselves are already
-     * expected to be entered against those weights.
-     */
+    if (
+      !Number.isFinite(caWeight) ||
+      !Number.isFinite(examWeight)
+    ) {
+      return null;
+    }
 
     if (
       caScore < 0 ||
@@ -643,7 +911,12 @@ export default function CourseResultsPage() {
       return null;
     }
 
-    return Number(total.toFixed(2));
+    return Number(
+      (
+        caScore +
+        examScore
+      ).toFixed(2)
+    );
   }
 
   /*
@@ -652,18 +925,29 @@ export default function CourseResultsPage() {
    * ==========================================================
    */
 
-  function getGrade(total: number | null) {
-    if (total === null) {
+  function getGrade(
+    total: number | null
+  ): GradingScale | null {
+    if (
+      total === null ||
+      !Number.isFinite(total)
+    ) {
       return null;
     }
 
-    const scale = gradingScale.find(
-      (item) =>
-        total >= Number(item.min_score) &&
-        total <= Number(item.max_score)
+    return (
+      gradingScale.find(
+        (item) =>
+          total >=
+            Number(
+              item.min_score
+            ) &&
+          total <=
+            Number(
+              item.max_score
+            )
+      ) || null
     );
-
-    return scale || null;
   }
 
   /*
@@ -682,34 +966,67 @@ export default function CourseResultsPage() {
      */
 
     if (value !== "") {
-      const numericValue = Number(value);
+      const numericValue =
+        Number(value);
 
-      if (!Number.isFinite(numericValue)) {
+      if (
+        !Number.isFinite(
+          numericValue
+        )
+      ) {
         return;
       }
 
-      if (numericValue < 0) {
+      if (
+        numericValue < 0
+      ) {
+        return;
+      }
+
+      const maxValue =
+        field === "ca_score"
+          ? Number(
+              scoringConfig?.ca_weight
+            )
+          : Number(
+              scoringConfig?.exam_weight
+            );
+
+      if (
+        Number.isFinite(
+          maxValue
+        ) &&
+        numericValue > maxValue
+      ) {
         return;
       }
     }
 
-    setRows((currentRows) =>
-      currentRows.map((row) => {
-        if (row.student.id !== studentId) {
-          return row;
-        }
+    setRows(
+      (currentRows) =>
+        currentRows.map(
+          (row) => {
+            if (
+              row.student.id !==
+              studentId
+            ) {
+              return row;
+            }
 
-        return {
-          ...row,
-          input: {
-            ...row.input,
-            [field]: value,
-          },
-        };
-      })
+            return {
+              ...row,
+              input: {
+                ...row.input,
+                [field]:
+                  value,
+              },
+            };
+          }
+        )
     );
 
     setSuccess("");
+    setError("");
   }
 
   /*
@@ -719,7 +1036,27 @@ export default function CourseResultsPage() {
    */
 
   async function saveResults() {
-    if (!session || !term || !course) {
+    if (
+      !session ||
+      !term ||
+      !course
+    ) {
+      return;
+    }
+
+    if (!scoringConfig) {
+      setError(
+        "No scoring configuration is available. Please ask an administrator to configure the scoring system."
+      );
+      return;
+    }
+
+    if (
+      gradingScale.length === 0
+    ) {
+      setError(
+        "No grading scale is available. Please ask an administrator to configure the grading scale."
+      );
       return;
     }
 
@@ -728,65 +1065,142 @@ export default function CourseResultsPage() {
     setSuccess("");
 
     try {
-      const rowsToSave = rows.filter(
-        (row) =>
-          row.input.ca_score !== "" ||
-          row.input.exam_score !== ""
-      );
-
       /*
-       * Validate all entered scores first.
+       * Only save rows where at least one
+       * score has been entered.
        */
 
-      for (const row of rowsToSave) {
+      const rowsToSave =
+        rows.filter(
+          (row) =>
+            row.input.ca_score !==
+              "" ||
+            row.input.exam_score !==
+              ""
+        );
+
+      if (
+        rowsToSave.length === 0
+      ) {
+        throw new Error(
+          "Please enter at least one student's CA or Exam score before saving."
+        );
+      }
+
+      /*
+       * ======================================================
+       * VALIDATE SCORES
+       * ======================================================
+       */
+
+      const caWeight =
+        Number(
+          scoringConfig.ca_weight
+        );
+
+      const examWeight =
+        Number(
+          scoringConfig.exam_weight
+        );
+
+      for (
+        const row of rowsToSave
+      ) {
         const ca =
-          row.input.ca_score === ""
+          row.input.ca_score ===
+          ""
             ? null
-            : Number(row.input.ca_score);
+            : Number(
+                row.input.ca_score
+              );
 
         const exam =
-          row.input.exam_score === ""
+          row.input.exam_score ===
+          ""
             ? null
-            : Number(row.input.exam_score);
+            : Number(
+                row.input.exam_score
+              );
 
-        const caWeight =
-          scoringConfig?.ca_weight ?? 40;
-
-        const examWeight =
-          scoringConfig?.exam_weight ?? 60;
+        /*
+         * CA validation.
+         */
 
         if (
           ca !== null &&
-          (ca < 0 || ca > caWeight)
+          (
+            !Number.isFinite(ca) ||
+            ca < 0 ||
+            ca > caWeight
+          )
         ) {
           throw new Error(
             `CA score for ${row.student.full_name} must be between 0 and ${caWeight}.`
           );
         }
 
+        /*
+         * Exam validation.
+         */
+
         if (
           exam !== null &&
-          (exam < 0 || exam > examWeight)
+          (
+            !Number.isFinite(exam) ||
+            exam < 0 ||
+            exam > examWeight
+          )
         ) {
           throw new Error(
             `Exam score for ${row.student.full_name} must be between 0 and ${examWeight}.`
           );
         }
 
+        /*
+         * Prevent saving only one component.
+         *
+         * Both CA and Exam should exist before
+         * a final total/grade can be calculated.
+         */
+
         if (
-          ca !== null &&
-          exam !== null
+          ca === null ||
+          exam === null
         ) {
-          const total = calculateTotal(
+          throw new Error(
+            `Please enter both CA and Exam scores for ${row.student.full_name}.`
+          );
+        }
+
+        /*
+         * Validate total.
+         */
+
+        const total =
+          calculateTotal(
             String(ca),
             String(exam)
           );
 
-          if (total === null) {
-            throw new Error(
-              `Invalid scores entered for ${row.student.full_name}.`
-            );
-          }
+        if (
+          total === null
+        ) {
+          throw new Error(
+            `Invalid scores entered for ${row.student.full_name}.`
+          );
+        }
+
+        /*
+         * Validate grade exists.
+         */
+
+        const gradeInfo =
+          getGrade(total);
+
+        if (!gradeInfo) {
+          throw new Error(
+            `No grading range matches ${total} for ${row.student.full_name}. Please ask an administrator to check the grading configuration.`
+          );
         }
       }
 
@@ -796,70 +1210,116 @@ export default function CourseResultsPage() {
        * ======================================================
        */
 
-      for (const row of rowsToSave) {
+      for (
+        const row of rowsToSave
+      ) {
         const ca =
-          row.input.ca_score === ""
-            ? null
-            : Number(row.input.ca_score);
+          Number(
+            row.input.ca_score
+          );
 
         const exam =
-          row.input.exam_score === ""
-            ? null
-            : Number(row.input.exam_score);
+          Number(
+            row.input.exam_score
+          );
 
         const total =
-          ca !== null && exam !== null
-            ? calculateTotal(
-                String(ca),
-                String(exam)
-              )
-            : null;
+          calculateTotal(
+            String(ca),
+            String(exam)
+          );
+
+        if (
+          total === null
+        ) {
+          throw new Error(
+            `Unable to calculate total for ${row.student.full_name}.`
+          );
+        }
 
         const gradeInfo =
           getGrade(total);
 
+        if (!gradeInfo) {
+          throw new Error(
+            `Unable to determine grade for ${row.student.full_name}.`
+          );
+        }
+
         const payload = {
-          student_id: row.student.id,
-          course_id: course.id,
-          session_id: session.id,
-          term_id: term.id,
+          student_id:
+            row.student.id,
 
-          ca_score: ca,
-          exam_score: exam,
+          course_id:
+            course.id,
 
-          total_score: total,
+          session_id:
+            session.id,
+
+          term_id:
+            term.id,
+
+          ca_score:
+            ca,
+
+          exam_score:
+            exam,
+
+          total_score:
+            total,
 
           grade:
-            gradeInfo?.grade || null,
+            gradeInfo.grade,
 
           remark:
-            gradeInfo?.remark || null,
+            gradeInfo.remark,
 
           /*
            * Teachers do not publish results.
-           * Existing published results stay published.
+           *
+           * If an existing result was already published,
+           * preserve its published state.
            */
+
           published:
-            row.result?.published ?? false,
+            row.result?.published ??
+            false,
         };
 
+        /*
+         * Existing result
+         */
+
         if (row.result) {
-          const { error: updateError } =
-            await supabase
-              .from("results")
-              .update(payload)
-              .eq("id", row.result.id);
+          const {
+            error: updateError,
+          } = await supabase
+            .from("results")
+            .update(payload)
+            .eq(
+              "id",
+              row.result.id
+            );
 
           if (updateError) {
             throw new Error(
               `Unable to update ${row.student.full_name}'s result: ${updateError.message}`
             );
           }
-        } else {
-          const { error: insertError } =
-            await supabase
-              .from("results")
-              .insert(payload);
+        }
+
+        /*
+         * New result
+         */
+
+        else {
+          const {
+            error: insertError,
+          } = await supabase
+            .from("results")
+            .insert(
+              payload
+            );
 
           if (insertError) {
             throw new Error(
@@ -870,7 +1330,7 @@ export default function CourseResultsPage() {
       }
 
       setSuccess(
-        "Results saved successfully. They remain unpublished until reviewed by an administrator."
+        "Results saved successfully. Grades and remarks were calculated automatically. Results remain unpublished until reviewed by an administrator."
       );
 
       await loadPage();
@@ -893,27 +1353,33 @@ export default function CourseResultsPage() {
    * ==========================================================
    */
 
-  const filteredRows = useMemo(() => {
-    const query = search.trim().toLowerCase();
+  const filteredRows =
+    useMemo(() => {
+      const query =
+        search
+          .trim()
+          .toLowerCase();
 
-    if (!query) {
-      return rows;
-    }
+      if (!query) {
+        return rows;
+      }
 
-    return rows.filter((row) => {
-      return (
-        row.student.full_name
-          .toLowerCase()
-          .includes(query) ||
-        row.student.student_id
-          ?.toLowerCase()
-          .includes(query) ||
-        row.student.admission_number
-          ?.toLowerCase()
-          .includes(query)
+      return rows.filter(
+        (row) => {
+          return (
+            row.student.full_name
+              .toLowerCase()
+              .includes(query) ||
+            row.student.student_id
+              ?.toLowerCase()
+              .includes(query) ||
+            row.student.admission_number
+              ?.toLowerCase()
+              .includes(query)
+          );
+        }
       );
-    });
-  }, [rows, search]);
+    }, [rows, search]);
 
   /*
    * ==========================================================
@@ -921,24 +1387,36 @@ export default function CourseResultsPage() {
    * ==========================================================
    */
 
-  const statistics = useMemo(() => {
-    const completed = rows.filter(
-      (row) =>
-        row.input.ca_score !== "" &&
-        row.input.exam_score !== ""
-    ).length;
+  const statistics =
+    useMemo(() => {
+      const completed =
+        rows.filter(
+          (row) =>
+            row.input.ca_score !==
+              "" &&
+            row.input.exam_score !==
+              ""
+        ).length;
 
-    const published = rows.filter(
-      (row) => row.result?.published
-    ).length;
+      const published =
+        rows.filter(
+          (row) =>
+            row.result?.published
+        ).length;
 
-    return {
-      students: rows.length,
-      completed,
-      pending: rows.length - completed,
-      published,
-    };
-  }, [rows]);
+      return {
+        students:
+          rows.length,
+
+        completed,
+
+        pending:
+          rows.length -
+          completed,
+
+        published,
+      };
+    }, [rows]);
 
   /*
    * ==========================================================
@@ -948,7 +1426,7 @@ export default function CourseResultsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-3 text-slate-600">
           <Loader2 className="h-8 w-8 animate-spin" />
 
@@ -962,13 +1440,16 @@ export default function CourseResultsPage() {
 
   /*
    * ==========================================================
-   * ERROR
+   * ERROR WITHOUT COURSE
    * ==========================================================
    */
 
-  if (error && !course) {
+  if (
+    error &&
+    !course
+  ) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
         <div className="w-full max-w-md rounded-2xl border border-red-100 bg-white p-6 shadow-sm">
           <div className="flex items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
@@ -988,14 +1469,18 @@ export default function CourseResultsPage() {
 
           <div className="mt-5 flex gap-3">
             <button
-              onClick={() => router.back()}
+              onClick={() =>
+                router.back()
+              }
               className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               Go Back
             </button>
 
             <button
-              onClick={loadPage}
+              onClick={
+                loadPage
+              }
               className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
             >
               Try Again
@@ -1045,7 +1530,10 @@ export default function CourseResultsPage() {
 
                       {course?.code && (
                         <span className="ml-2">
-                          • {course.code}
+                          •{" "}
+                          {
+                            course.code
+                          }
                         </span>
                       )}
                     </p>
@@ -1055,8 +1543,17 @@ export default function CourseResultsPage() {
             </div>
 
             <button
-              onClick={saveResults}
-              disabled={saving || rows.length === 0}
+              onClick={
+                saveResults
+              }
+              disabled={
+                saving ||
+                rows.length ===
+                  0 ||
+                !scoringConfig ||
+                gradingScale.length ===
+                  0
+              }
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving ? (
@@ -1073,7 +1570,7 @@ export default function CourseResultsPage() {
             </button>
           </div>
 
-          {/* SESSION / TERM */}
+          {/* SESSION / TERM / CONFIG */}
 
           <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
             {session && (
@@ -1090,8 +1587,22 @@ export default function CourseResultsPage() {
 
             {scoringConfig && (
               <span className="rounded-full bg-blue-50 px-3 py-1.5 font-medium text-blue-700">
-                CA {scoringConfig.ca_weight}% • Exam{" "}
-                {scoringConfig.exam_weight}%
+                CA{" "}
+                {
+                  scoringConfig.ca_weight
+                }%
+                {" • "}
+                Exam{" "}
+                {
+                  scoringConfig.exam_weight
+                }%
+              </span>
+            )}
+
+            {gradingScale.length >
+              0 && (
+              <span className="rounded-full bg-emerald-50 px-3 py-1.5 font-medium text-emerald-700">
+                Automatic grading enabled
               </span>
             )}
           </div>
@@ -1134,28 +1645,76 @@ export default function CourseResultsPage() {
         )}
 
         {/* ===================================================
+            CONFIGURATION WARNING
+        =================================================== */}
+
+        {course &&
+          (!scoringConfig ||
+            gradingScale.length ===
+              0) && (
+            <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+
+                <div>
+                  <h2 className="text-sm font-semibold text-amber-900">
+                    Results configuration required
+                  </h2>
+
+                  <p className="mt-1 text-sm leading-6 text-amber-800">
+                    An administrator must configure the scoring weights and grading scale before teachers can save results.
+                  </p>
+
+                  <div className="mt-3 space-y-1 text-xs text-amber-700">
+                    {!scoringConfig && (
+                      <p>
+                        • Scoring configuration is missing.
+                      </p>
+                    )}
+
+                    {gradingScale.length ===
+                      0 && (
+                      <p>
+                        • Grading scale is missing.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+        {/* ===================================================
             STATISTICS
         =================================================== */}
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatCard
             label="Students"
-            value={statistics.students}
+            value={
+              statistics.students
+            }
           />
 
           <StatCard
             label="Completed"
-            value={statistics.completed}
+            value={
+              statistics.completed
+            }
           />
 
           <StatCard
             label="Pending"
-            value={statistics.pending}
+            value={
+              statistics.pending
+            }
           />
 
           <StatCard
             label="Published"
-            value={statistics.published}
+            value={
+              statistics.published
+            }
           />
         </div>
 
@@ -1171,7 +1730,9 @@ export default function CourseResultsPage() {
               type="text"
               value={search}
               onChange={(event) =>
-                setSearch(event.target.value)
+                setSearch(
+                  event.target.value
+                )
               }
               placeholder="Search student name, student ID or admission number..."
               className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
@@ -1183,7 +1744,8 @@ export default function CourseResultsPage() {
             EMPTY STATE
         =================================================== */}
 
-        {rows.length === 0 ? (
+        {rows.length ===
+        0 ? (
           <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
               <Users className="h-6 w-6" />
@@ -1194,9 +1756,7 @@ export default function CourseResultsPage() {
             </h2>
 
             <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-500">
-              There are currently no active students
-              enrolled in the class assigned to this
-              course.
+              There are currently no active students enrolled in the class assigned to this course.
             </p>
           </div>
         ) : (
@@ -1216,12 +1776,18 @@ export default function CourseResultsPage() {
 
                       <th className="w-36 px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
                         CA /{" "}
-                        {scoringConfig?.ca_weight ?? 40}
+                        {
+                          scoringConfig?.ca_weight ??
+                          "—"
+                        }
                       </th>
 
                       <th className="w-36 px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
                         Exam /{" "}
-                        {scoringConfig?.exam_weight ?? 60}
+                        {
+                          scoringConfig?.exam_weight ??
+                          "—"
+                        }
                       </th>
 
                       <th className="w-28 px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1239,130 +1805,175 @@ export default function CourseResultsPage() {
                   </thead>
 
                   <tbody>
-                    {filteredRows.map((row) => {
-                      const total =
-                        calculateTotal(
-                          row.input.ca_score,
-                          row.input.exam_score
+                    {filteredRows.map(
+                      (row) => {
+                        const total =
+                          calculateTotal(
+                            row.input
+                              .ca_score,
+                            row.input
+                              .exam_score
+                          );
+
+                        const gradeInfo =
+                          getGrade(
+                            total
+                          );
+
+                        return (
+                          <tr
+                            key={
+                              row
+                                .student
+                                .id
+                            }
+                            className="border-b border-slate-100 last:border-0 hover:bg-slate-50/70"
+                          >
+                            {/* STUDENT */}
+
+                            <td className="px-5 py-4">
+                              <div className="font-medium text-slate-900">
+                                {
+                                  row
+                                    .student
+                                    .full_name
+                                }
+                              </div>
+
+                              <div className="mt-1 text-xs text-slate-500">
+                                {row
+                                  .student
+                                  .student_id ||
+                                  row
+                                    .student
+                                    .admission_number ||
+                                  "No student ID"}
+                              </div>
+                            </td>
+
+                            {/* CA */}
+
+                            <td className="px-4 py-4">
+                              <input
+                                type="number"
+                                min="0"
+                                max={
+                                  scoringConfig?.ca_weight ??
+                                  undefined
+                                }
+                                step="0.01"
+                                value={
+                                  row
+                                    .input
+                                    .ca_score
+                                }
+                                disabled={
+                                  !scoringConfig
+                                }
+                                onChange={(
+                                  event
+                                ) =>
+                                  updateScore(
+                                    row
+                                      .student
+                                      .id,
+                                    "ca_score",
+                                    event
+                                      .target
+                                      .value
+                                  )
+                                }
+                                placeholder="0"
+                                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-center text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                              />
+                            </td>
+
+                            {/* EXAM */}
+
+                            <td className="px-4 py-4">
+                              <input
+                                type="number"
+                                min="0"
+                                max={
+                                  scoringConfig?.exam_weight ??
+                                  undefined
+                                }
+                                step="0.01"
+                                value={
+                                  row
+                                    .input
+                                    .exam_score
+                                }
+                                disabled={
+                                  !scoringConfig
+                                }
+                                onChange={(
+                                  event
+                                ) =>
+                                  updateScore(
+                                    row
+                                      .student
+                                      .id,
+                                    "exam_score",
+                                    event
+                                      .target
+                                      .value
+                                  )
+                                }
+                                placeholder="0"
+                                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-center text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                              />
+                            </td>
+
+                            {/* TOTAL */}
+
+                            <td className="px-4 py-4 text-center">
+                              <span className="font-semibold text-slate-900">
+                                {total !==
+                                null
+                                  ? total
+                                  : "—"}
+                              </span>
+                            </td>
+
+                            {/* GRADE */}
+
+                            <td className="px-4 py-4 text-center">
+                              {gradeInfo ? (
+                                <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                                  {
+                                    gradeInfo.grade
+                                  }
+                                </span>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+
+                            {/* STATUS */}
+
+                            <td className="px-4 py-4 text-center">
+                              {row
+                                .result
+                                ?.published ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  Published
+                                </span>
+                              ) : row.result ? (
+                                <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+                                  Unpublished
+                                </span>
+                              ) : (
+                                <span className="text-xs text-slate-400">
+                                  Not entered
+                                </span>
+                              )}
+                            </td>
+                          </tr>
                         );
-
-                      const gradeInfo =
-                        getGrade(total);
-
-                      return (
-                        <tr
-                          key={row.student.id}
-                          className="border-b border-slate-100 last:border-0 hover:bg-slate-50/70"
-                        >
-                          {/* STUDENT */}
-
-                          <td className="px-5 py-4">
-                            <div className="font-medium text-slate-900">
-                              {row.student.full_name}
-                            </div>
-
-                            <div className="mt-1 text-xs text-slate-500">
-                              {row.student.student_id ||
-                                row.student.admission_number ||
-                                "No student ID"}
-                            </div>
-                          </td>
-
-                          {/* CA */}
-
-                          <td className="px-4 py-4">
-                            <input
-                              type="number"
-                              min="0"
-                              max={
-                                scoringConfig?.ca_weight ??
-                                40
-                              }
-                              step="0.01"
-                              value={
-                                row.input.ca_score
-                              }
-                              onChange={(event) =>
-                                updateScore(
-                                  row.student.id,
-                                  "ca_score",
-                                  event.target.value
-                                )
-                              }
-                              placeholder="0"
-                              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-center text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-                            />
-                          </td>
-
-                          {/* EXAM */}
-
-                          <td className="px-4 py-4">
-                            <input
-                              type="number"
-                              min="0"
-                              max={
-                                scoringConfig?.exam_weight ??
-                                60
-                              }
-                              step="0.01"
-                              value={
-                                row.input.exam_score
-                              }
-                              onChange={(event) =>
-                                updateScore(
-                                  row.student.id,
-                                  "exam_score",
-                                  event.target.value
-                                )
-                              }
-                              placeholder="0"
-                              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-center text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-                            />
-                          </td>
-
-                          {/* TOTAL */}
-
-                          <td className="px-4 py-4 text-center">
-                            <span className="font-semibold text-slate-900">
-                              {total !== null
-                                ? total
-                                : "—"}
-                            </span>
-                          </td>
-
-                          {/* GRADE */}
-
-                          <td className="px-4 py-4 text-center">
-                            {gradeInfo ? (
-                              <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
-                                {gradeInfo.grade}
-                              </span>
-                            ) : (
-                              "—"
-                            )}
-                          </td>
-
-                          {/* STATUS */}
-
-                          <td className="px-4 py-4 text-center">
-                            {row.result?.published ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                                <CheckCircle2 className="h-3 w-3" />
-                                Published
-                              </span>
-                            ) : row.result ? (
-                              <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
-                                Unpublished
-                              </span>
-                            ) : (
-                              <span className="text-xs text-slate-400">
-                                Not entered
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                      }
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1373,147 +1984,209 @@ export default function CourseResultsPage() {
             ================================================= */}
 
             <div className="mt-6 space-y-3 md:hidden">
-              {filteredRows.map((row) => {
-                const total =
-                  calculateTotal(
-                    row.input.ca_score,
-                    row.input.exam_score
+              {filteredRows.map(
+                (row) => {
+                  const total =
+                    calculateTotal(
+                      row.input
+                        .ca_score,
+                      row.input
+                        .exam_score
+                    );
+
+                  const gradeInfo =
+                    getGrade(
+                      total
+                    );
+
+                  return (
+                    <div
+                      key={
+                        row
+                          .student
+                          .id
+                      }
+                      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                    >
+                      {/* STUDENT */}
+
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="font-semibold text-slate-900">
+                            {
+                              row
+                                .student
+                                .full_name
+                            }
+                          </h3>
+
+                          <p className="mt-1 text-xs text-slate-500">
+                            {row
+                              .student
+                              .student_id ||
+                              row
+                                .student
+                                .admission_number ||
+                              "No student ID"}
+                          </p>
+                        </div>
+
+                        {row
+                          .result
+                          ?.published ? (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                            <CheckCircle2 className="h-3 w-3" />
+                            Published
+                          </span>
+                        ) : (
+                          <span className="inline-flex shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+                            {row.result
+                              ? "Unpublished"
+                              : "New"}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* SCORES */}
+
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="mb-1.5 block text-xs font-medium text-slate-500">
+                            CA /{" "}
+                            {
+                              scoringConfig?.ca_weight ??
+                              "—"
+                            }
+                          </label>
+
+                          <input
+                            type="number"
+                            min="0"
+                            max={
+                              scoringConfig?.ca_weight ??
+                              undefined
+                            }
+                            step="0.01"
+                            value={
+                              row
+                                .input
+                                .ca_score
+                            }
+                            disabled={
+                              !scoringConfig
+                            }
+                            onChange={(
+                              event
+                            ) =>
+                              updateScore(
+                                row
+                                  .student
+                                  .id,
+                                "ca_score",
+                                event
+                                  .target
+                                  .value
+                              )
+                            }
+                            placeholder="0"
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-xs font-medium text-slate-500">
+                            Exam /{" "}
+                            {
+                              scoringConfig?.exam_weight ??
+                              "—"
+                            }
+                          </label>
+
+                          <input
+                            type="number"
+                            min="0"
+                            max={
+                              scoringConfig?.exam_weight ??
+                              undefined
+                            }
+                            step="0.01"
+                            value={
+                              row
+                                .input
+                                .exam_score
+                            }
+                            disabled={
+                              !scoringConfig
+                            }
+                            onChange={(
+                              event
+                            ) =>
+                              updateScore(
+                                row
+                                  .student
+                                  .id,
+                                "exam_score",
+                                event
+                                  .target
+                                  .value
+                              )
+                            }
+                            placeholder="0"
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                          />
+                        </div>
+                      </div>
+
+                      {/* RESULT */}
+
+                      <div className="mt-4 flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+                        <div>
+                          <p className="text-xs text-slate-500">
+                            Total
+                          </p>
+
+                          <p className="mt-0.5 font-bold text-slate-900">
+                            {total !==
+                            null
+                              ? total
+                              : "—"}
+                          </p>
+                        </div>
+
+                        <div className="text-right">
+                          <p className="text-xs text-slate-500">
+                            Grade
+                          </p>
+
+                          <p className="mt-0.5 font-bold text-slate-900">
+                            {gradeInfo?.grade ||
+                              "—"}
+                          </p>
+                        </div>
+
+                        <div className="text-right">
+                          <p className="text-xs text-slate-500">
+                            Remark
+                          </p>
+
+                          <p className="mt-0.5 max-w-[120px] truncate text-sm font-medium text-slate-700">
+                            {
+                              gradeInfo?.remark ||
+                              "—"
+                            }
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   );
-
-                const gradeInfo =
-                  getGrade(total);
-
-                return (
-                  <div
-                    key={row.student.id}
-                    className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-                  >
-                    {/* STUDENT */}
-
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h3 className="font-semibold text-slate-900">
-                          {row.student.full_name}
-                        </h3>
-
-                        <p className="mt-1 text-xs text-slate-500">
-                          {row.student.student_id ||
-                            row.student.admission_number ||
-                            "No student ID"}
-                        </p>
-                      </div>
-
-                      {row.result?.published ? (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                          <CheckCircle2 className="h-3 w-3" />
-                          Published
-                        </span>
-                      ) : (
-                        <span className="inline-flex shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
-                          {row.result
-                            ? "Unpublished"
-                            : "New"}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* SCORES */}
-
-                    <div className="mt-4 grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="mb-1.5 block text-xs font-medium text-slate-500">
-                          CA /{" "}
-                          {scoringConfig?.ca_weight ??
-                            40}
-                        </label>
-
-                        <input
-                          type="number"
-                          min="0"
-                          max={
-                            scoringConfig?.ca_weight ??
-                            40
-                          }
-                          step="0.01"
-                          value={
-                            row.input.ca_score
-                          }
-                          onChange={(event) =>
-                            updateScore(
-                              row.student.id,
-                              "ca_score",
-                              event.target.value
-                            )
-                          }
-                          placeholder="0"
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-xs font-medium text-slate-500">
-                          Exam /{" "}
-                          {scoringConfig?.exam_weight ??
-                            60}
-                        </label>
-
-                        <input
-                          type="number"
-                          min="0"
-                          max={
-                            scoringConfig?.exam_weight ??
-                            60
-                          }
-                          step="0.01"
-                          value={
-                            row.input.exam_score
-                          }
-                          onChange={(event) =>
-                            updateScore(
-                              row.student.id,
-                              "exam_score",
-                              event.target.value
-                            )
-                          }
-                          placeholder="0"
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-                        />
-                      </div>
-                    </div>
-
-                    {/* RESULT */}
-
-                    <div className="mt-4 flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-                      <div>
-                        <p className="text-xs text-slate-500">
-                          Total
-                        </p>
-
-                        <p className="mt-0.5 font-bold text-slate-900">
-                          {total !== null
-                            ? total
-                            : "—"}
-                        </p>
-                      </div>
-
-                      <div className="text-right">
-                        <p className="text-xs text-slate-500">
-                          Grade
-                        </p>
-
-                        <p className="mt-0.5 font-bold text-slate-900">
-                          {gradeInfo?.grade || "—"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+                }
+              )}
             </div>
 
             {/* NO SEARCH RESULTS */}
 
-            {filteredRows.length === 0 && (
+            {filteredRows.length ===
+              0 && (
               <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center">
                 <Search className="mx-auto h-6 w-6 text-slate-400" />
 
@@ -1522,7 +2195,9 @@ export default function CourseResultsPage() {
                 </p>
 
                 <button
-                  onClick={() => setSearch("")}
+                  onClick={() =>
+                    setSearch("")
+                  }
                   className="mt-3 text-sm font-semibold text-slate-900 underline underline-offset-4"
                 >
                   Clear search
@@ -1536,7 +2211,8 @@ export default function CourseResultsPage() {
             BOTTOM SAVE
         =================================================== */}
 
-        {rows.length > 0 && (
+        {rows.length >
+          0 && (
           <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-semibold text-slate-900">
@@ -1544,15 +2220,20 @@ export default function CourseResultsPage() {
               </p>
 
               <p className="mt-1 text-xs leading-5 text-slate-500">
-                Teacher-entered results remain unpublished
-                until reviewed and published by an
-                administrator.
+                Enter CA and Exam scores. Total, grade and remark are calculated automatically. Results remain unpublished until reviewed by an administrator.
               </p>
             </div>
 
             <button
-              onClick={saveResults}
-              disabled={saving}
+              onClick={
+                saveResults
+              }
+              disabled={
+                saving ||
+                !scoringConfig ||
+                gradingScale.length ===
+                  0
+              }
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving ? (

@@ -908,7 +908,7 @@ function StaffSidebar({
                 className="text-sm font-bold"
                 style={{ color: SCHOOL_BLUE_DARK }}
               >
-                Al-Irshad
+                AL - IRSHAD
               </p>
 
               <p className="text-[11px] font-medium text-slate-400">

@@ -638,7 +638,7 @@ export default function StaffClassesPage() {
 
             <div className="min-w-0">
               <p className="truncate text-sm font-bold text-slate-900">
-                Al-Irshad Model School
+                AL - IRSHAD MODEL SCHOOLS
               </p>
 
               <p className="text-xs text-slate-500">Staff Portal</p>

@@ -311,7 +311,7 @@ export default function StaffPortalPage() {
                   color: SCHOOL_BLUE_DARK,
                 }}
               >
-                Model School
+               MODEL SCHOOLS
               </h1>
 
               <p className="mt-1 text-xs font-medium text-slate-400">

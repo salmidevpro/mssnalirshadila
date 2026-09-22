@@ -1746,7 +1746,7 @@ export default function StaffSettingsPage() {
 
                 <div className="flex-1">
                   <h3 className="text-base font-bold text-slate-900">
-                    Al-Irshad Staff Portal
+                    AL - IRSHAD STAFF PORTAL
                   </h3>
 
                   <p className="mt-1 text-xs leading-5 text-slate-500">

@@ -50,7 +50,7 @@ export default function StaffForgotPasswordPage() {
     try {
       const { error: resetError } =
         await supabase.auth.resetPasswordForEmail(emailValue, {
-          redirectTo: `${window.location.origin}/staff/reset-password`,
+          redirectTo: `${window.location.origin}/staff-login/staff/reset-password`,
         });
 
       if (resetError) {
