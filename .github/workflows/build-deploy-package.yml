@@ -1,0 +1,54 @@
+
+name: Build Next.js Deployment Package
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Next.js application
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+
+      - name: Prepare deployment package
+        run: |
+          mkdir -p .next/standalone/.next
+          cp -a .next/static .next/standalone/.next/static
+
+          if [ -d public ]; then
+            cp -a public .next/standalone/public
+          fi
+
+          cd .next/standalone
+          zip -qr "$GITHUB_WORKSPACE/next-standalone-deploy.zip" .
+
+      - name: Upload deployment package
+        uses: actions/upload-artifact@v4
+        with:
+          name: next-standalone-deploy
+          path: next-standalone-deploy.zip
+          if-no-files-found: error
+          retention-days: 7
